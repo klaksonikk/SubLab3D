@@ -1,0 +1,6 @@
+{
+  "name": "Subbox CAD",
+  "description": "Inżynierski projektant obudów subwooferowych 3D z silnikiem akustycznym Thiele-Small, wizualizacją Three.js i optymalizatorem listy cięcia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
