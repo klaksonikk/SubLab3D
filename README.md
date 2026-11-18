@@ -3,10 +3,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Three.js](https://img.shields.io/badge/Three.js-CAD%203D-000000?logo=threedotjs&logoColor=white)
-![Electron](https://img.shields.io/badge/Electron-Offline%20Desktop-47848F?logo=electron&logoColor=white)
-![GitHub Pages](https://img.shields.io/badge/GitHub%20Pages-Ready-222222?logo=githubpages&logoColor=white)
-
-**SubLab 3D** to zaawansowana aplikacja inżynierska do projektowania obudów car-audio i home-audio w 3D, symulacji akustycznej Thiele-Small (moduł **WSD**), generowania list cięcia oraz optymalizacji rozkroju płyt stolarskich — działająca w **100% offline** w przeglądarce oraz jako aplikacja desktopowa **Electron**.
+**SubLab 3D** to zaawansowana aplikacja inżynierska do projektowania obudów car-audio i home-audio w 3D, symulacji akustycznej Thiele-Small (moduł **WSD**), generowania list cięcia oraz optymalizacji rozkroju płyt stolarskich 
 
 ---
 
@@ -15,9 +12,7 @@
 - [Kluczowe możliwości](#kluczowe-możliwości)
 - [Laboratorium WSD (Analiza T-S)](#laboratorium-wsd-analiza-t-s)
 - [Przykładowe porównanie — Deaf Bonce Machete MF-12R D2](#przykładowe-porównanie--deaf-bonce-machete-mf-12r-d2)
-- [Uruchomienie lokalne (Web & Electron)](#uruchomienie-lokalne-web--electron)
 - [Testy jednostkowe i weryfikacja](#testy-jednostkowe-i-weryfikacja)
-- [Publikacja na GitHub Pages](#publikacja-na-github-pages)
 - [Architektura projektu](#architektura-projektu)
 
 ---
@@ -77,38 +72,6 @@ Przykładowa obudowa szczelinowa (`680 × 380 mm`, płyta `18 mm`, `55.0 L netto
 
 ---
 
-## Uruchomienie lokalne (Web & Electron)
-
-Wymagany **Node.js 20+** oraz **npm**.
-
-```bash
-# 1. Instalacja zależności
-npm install
-
-# 2. Tryb deweloperski Web (port 3000)
-npm run dev
-
-# 3. Build produkcyjny (statyczny folder dist/)
-npm run build
-
-# 4. Podgląd buildu produkcyjnego
-npm run preview
-```
-
-### Aplikacja desktopowa Offline (Electron)
-
-```bash
-# Uruchomienie okna Electron z lokalnego buildu dist/
-npm run electron:start
-
-# Tryb deweloperski Electron (wymaga uruchomionego `npm run dev`)
-npm run electron:dev
-
-# Spakowanie instalatora / paczki desktopowej (Windows NSIS/Portable, Linux AppImage, macOS DMG)
-npm run electron:pack
-```
-
----
 
 ## Testy jednostkowe i weryfikacja
 
@@ -125,22 +88,6 @@ npx --yes tsx --test \
 # Weryfikacja typów TypeScript
 npm run lint
 ```
-
----
-
-## Publikacja na GitHub Pages
-
-Repozytorium zawiera gotową konfigurację pod statyczny hosting **GitHub Pages**:
-- `vite.config.ts` z `base: './'` (poprawne ścieżki dla dowolnej nazwy repozytorium),
-- `public/.nojekyll`,
-- workflow **GitHub Actions**: `.github/workflows/deploy-gh-pages.yml`.
-
-Aby opublikować aplikację:
-1. Wypchnij kod na gałąź `main` swojego repozytorium GitHub.
-2. Przejdź w repozytorium do **Settings → Pages → Build and deployment → Source** i ustaw **GitHub Actions**.
-3. Każdy push na `main` automatycznie zbuduje `dist/` i wdroży aplikację online.
-
----
 
 ## Architektura projektu
 
