@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_BOX_PARAMS, DRIVER_PRESETS } from './presets';
+import { BOX_TEMPLATE_PRESETS, DEFAULT_BOX_PARAMS, DRIVER_PRESETS } from './presets';
 import {
   simulateEnclosureSeries,
   type ComparisonVariant,
@@ -8,6 +8,8 @@ import {
 } from './simulator';
 import {
   buildCustomDriverPreset,
+  computeElectricalLoad,
+  dbfsToLinearGain,
   driverPresetToSolverInput,
   solveThieleSmall,
 } from './tsSolver';
@@ -18,6 +20,10 @@ test('solveThieleSmall auto-calculates exact Q-triad (Qts, Qes, Qms) in all 3 mo
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.0,
+    coilWiring: 'series',
     fs: 33,
     qes: 0.45,
     qms: 5.2,
@@ -47,6 +53,10 @@ test('solveThieleSmall auto-calculates exact Q-triad (Qts, Qes, Qms) in all 3 mo
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount: 1,
+    coilNominalOhms: 4,
+    coilReOhms: 3.2,
+    coilWiring: 'single',
     fs: 33,
     qes: 0.99,
     qms: 5.2,
@@ -71,6 +81,10 @@ test('solveThieleSmall auto-calculates exact Q-triad (Qts, Qes, Qms) in all 3 mo
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount: 1,
+    coilNominalOhms: 4,
+    coilReOhms: 3.2,
+    coilWiring: 'single',
     fs: 33,
     qes: 0.45,
     qms: 9.9,
@@ -96,6 +110,10 @@ test('solveThieleSmall round-trips Fs/Vas <-> Mms/Cms and Bl <-> Qes consistentl
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.0,
+    coilWiring: 'series',
     fs: 31,
     qes: 0.49,
     qms: 4.31,
@@ -119,6 +137,10 @@ test('solveThieleSmall round-trips Fs/Vas <-> Mms/Cms and Bl <-> Qes consistentl
     mechSolveMode: 'from_mms_cms',
     motorSolveMode: 'solve_qes_from_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.0,
+    coilWiring: 'series',
     fs: 99,
     qes: 0.99,
     qms: 4.31,
@@ -200,4 +222,73 @@ test('buildCustomDriverPreset produces valid DriverPreset for simulator & 3D box
   assert.ok(hotRes.thermalCompressionDb > 2.5, '100C coil rise must show power compression > 2.5 dB');
   assert.ok(hotRes.points[30].apparentLoadVa > 50);
   assert.ok(coldRes.points[30].maxPowerW > 0);
+});
+
+test('computeElectricalLoad accurately solves SVC/DVC coil wiring and multi-driver array topologies', () => {
+  const d2Par = computeElectricalLoad({
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.8,
+    baseLeMh: 2.0,
+    coilWiring: 'parallel',
+    driverCount: 1,
+    arrayWiring: 'parallel',
+  });
+  assert.equal(d2Par.totalNominalOhms, 1);
+  assert.ok(Math.abs(d2Par.totalReOhms - 0.9) < 0.001);
+  assert.ok(Math.abs(d2Par.totalLeMh - 0.5) < 0.001);
+
+  const d2Ser = computeElectricalLoad({
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.8,
+    baseLeMh: 2.0,
+    coilWiring: 'series',
+    driverCount: 1,
+    arrayWiring: 'parallel',
+  });
+  assert.equal(d2Ser.totalNominalOhms, 4);
+  assert.ok(Math.abs(d2Ser.totalReOhms - 3.6) < 0.001);
+  assert.equal(d2Ser.totalLeMh, 2.0);
+
+  const quad2S2P = computeElectricalLoad({
+    voiceCoilCount: 2,
+    coilNominalOhms: 4,
+    coilReOhms: 3.2,
+    baseLeMh: 2.4,
+    coilWiring: 'parallel',
+    driverCount: 4,
+    arrayWiring: 'series_parallel',
+  });
+  assert.equal(quad2S2P.totalNominalOhms, 2);
+  assert.ok(Math.abs(quad2S2P.totalReOhms - 1.6) < 0.001);
+
+  const six2S3P = computeElectricalLoad({
+    voiceCoilCount: 1,
+    coilNominalOhms: 4,
+    coilReOhms: 3.1,
+    baseLeMh: 1.2,
+    coilWiring: 'single',
+    driverCount: 6,
+    arrayWiring: 'series_parallel',
+  });
+  assert.ok(Math.abs(six2S3P.totalNominalOhms - 8 / 3) < 0.001);
+});
+
+test('dbfsToLinearGain converts 0 dBFS down to -60 dBFS for Web Audio API', () => {
+  assert.equal(dbfsToLinearGain(0), 1);
+  assert.equal(dbfsToLinearGain(12), 1);
+  assert.ok(Math.abs(dbfsToLinearGain(-6) - 0.501187) < 0.001);
+  assert.ok(Math.abs(dbfsToLinearGain(-20) - 0.1) < 0.0001);
+});
+
+test('DRIVER_PRESETS keeps only Deaf Bonce MF-12R D2 and BOX_TEMPLATE_PRESETS disables doubleFrontBaffle', () => {
+  assert.equal(DRIVER_PRESETS.length, 1);
+  assert.equal(DRIVER_PRESETS[0].id, 'deaf-bonce-mf12r-d2');
+  assert.ok(DRIVER_PRESETS[0].voiceCoilCount === 2);
+  assert.ok((DRIVER_PRESETS[0].coilNominalOhms ?? 0) === 2 && (DRIVER_PRESETS[0].coilReOhms ?? 0) === 1.8);
+
+  for (const tpl of BOX_TEMPLATE_PRESETS) {
+    assert.equal(tpl.params.doubleFrontBaffle, false);
+  }
 });

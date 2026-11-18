@@ -1,21 +1,27 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Edit3,
   Plus,
   Save,
   Sliders,
   Trash2,
 } from 'lucide-react';
+import { BOX_TEMPLATE_PRESETS, DRIVER_PRESETS } from '../engine/presets';
+import { computeDerivedDriverMetrics } from '../engine/simulator';
+import { computeElectricalLoad } from '../engine/tsSolver';
 import type {
   AcousticResult,
   BoxAutoCalcField,
   BoxParams,
+  CoilWiringMode,
   DriverFace,
   DriverPattern,
   DriverPreset,
+  DriverWiringType,
   EnclosureType,
   JoineryType,
   MaterialType,
@@ -23,8 +29,9 @@ import type {
   PortFace,
   RoundPortOrientation,
   SlotPortSide,
+  VoiceCoilCount,
 } from '../engine/types';
-import { BOX_TEMPLATE_PRESETS, DRIVER_PRESETS } from '../engine/presets';
+import { ImmediateNumberInput } from './ImmediateNumberInput';
 
 interface SidebarControlsProps {
   params: BoxParams;
@@ -32,88 +39,53 @@ interface SidebarControlsProps {
   customDrivers: DriverPreset[];
   onChange: (patch: Partial<BoxParams>) => void;
   onApplyTemplate: (templateId: string) => void;
-  onSaveCustomDriver: (driver: DriverPreset) => void;
+  onSaveCustomDriver: (
+    driver: DriverPreset,
+    applyToProjectToo?: boolean,
+    coilWiring?: CoilWiringMode,
+  ) => void;
   onDeleteCustomDriver: (driverId: string) => void;
+  onOpenDriverModal: (editTarget: DriverPreset | null, template?: DriverPreset) => void;
 }
 
-interface ParamSliderRowProps {
+interface ImmediateNumberRowProps {
   id: string;
   label: string;
   value: number;
   min: number;
   max: number;
-  step?: number;
+  decimals?: number;
   unit: string;
   onChange: (val: number) => void;
 }
 
-function ParamSliderRow({
+function ImmediateNumberRow({
   id,
   label,
   value,
   min,
   max,
-  step = 1,
+  decimals = 1,
   unit,
   onChange,
-}: ParamSliderRowProps) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const upper = min < 0 ? max : Math.max(max, max * 2);
-
+}: ImmediateNumberRowProps) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="text-xs text-zinc-300">
-          {label}
-        </label>
-        <div className="flex items-center gap-1">
-          <input
-            id={id}
-            type="number"
-            min={min}
-            max={max}
-            step={step}
-            value={editing ? draft : Number.isFinite(value) ? value : 0}
-            onFocus={() => {
-              setEditing(true);
-              setDraft(String(Number.isFinite(value) ? value : 0));
-            }}
-            onChange={(e) => {
-              const raw = e.target.value;
-              setDraft(raw);
-              const parsed = parseFloat(raw.replace(',', '.'));
-              if (!Number.isNaN(parsed) && parsed >= min && parsed <= upper) {
-                onChange(parsed);
-              }
-            }}
-            onBlur={() => {
-              setEditing(false);
-              const parsed = parseFloat(draft.replace(',', '.'));
-              if (!Number.isNaN(parsed)) {
-                onChange(Math.max(min, Math.min(upper, parsed)));
-              }
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                (e.currentTarget as HTMLInputElement).blur();
-              }
-            }}
-            className="w-20 bg-[#08090C] border border-white/[0.12] rounded px-2 py-0.5 text-right font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
-          />
-          <span className="text-[11px] text-zinc-500 w-6">{unit}</span>
-        </div>
+    <div className="flex items-center justify-between gap-2">
+      <label htmlFor={id} className="text-xs text-zinc-300">
+        {label}
+      </label>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <ImmediateNumberInput
+          id={id}
+          value={value}
+          min={min}
+          max={max}
+          decimals={decimals}
+          onChange={onChange}
+          className="w-24 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1 text-right font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
+        />
+        <span className="text-[11px] text-zinc-500 w-7">{unit}</span>
       </div>
-      <input
-        type="range"
-        aria-label={`${label} suwak`}
-        min={min}
-        max={max}
-        step={step}
-        value={Math.min(max, Math.max(min, value))}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="cad-slider w-full"
-      />
     </div>
   );
 }
@@ -134,7 +106,7 @@ function ReadOnlyComputedField({ id, label, valueText, unit, hint }: ReadOnlyCom
           {label}
           <span className="text-red-400 ml-0.5">*</span>
         </label>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5 shrink-0">
           <input
             id={id}
             type="text"
@@ -143,12 +115,40 @@ function ReadOnlyComputedField({ id, label, valueText, unit, hint }: ReadOnlyCom
             value={valueText}
             className="w-24 bg-[#08090C] border border-white/[0.08] rounded px-2 py-1 text-right font-mono-num text-xs text-zinc-300 cursor-not-allowed select-all focus:outline-none"
           />
-          <span className="text-[11px] text-zinc-500 w-6">{unit}</span>
+          <span className="text-[11px] text-zinc-500 w-7">{unit}</span>
         </div>
       </div>
       {hint && <p className="text-[11px] text-zinc-500 leading-snug">{hint}</p>}
     </div>
   );
+}
+
+function buildPresetPatch(preset: DriverPreset): Partial<BoxParams> {
+  const voiceCoilCount: VoiceCoilCount = preset.voiceCoilCount === 2 ? 2 : 1;
+  const coilNominalOhms =
+    preset.coilNominalOhms ?? (voiceCoilCount === 2 ? (preset.zNom ?? 4) / 2 : preset.zNom ?? 4);
+  const coilReOhms =
+    preset.coilReOhms ??
+    (voiceCoilCount === 2 ? (preset.re ?? coilNominalOhms * 1.6) / 2 : preset.re ?? 3.2);
+  const coilWiring: CoilWiringMode = voiceCoilCount === 2 ? 'series' : 'single';
+  return {
+    driverPresetId: preset.id,
+    driverName: preset.name,
+    driverCutoutDia: preset.cutoutDia,
+    driverOuterDia: preset.outerDia,
+    driverDepth: preset.depth,
+    driverDisplacement: preset.displacement,
+    driverFs: preset.fs,
+    driverQts: preset.qts,
+    driverVas: preset.vas,
+    driverXmax: preset.xmax,
+    driverPowerW: preset.powerW,
+    driverVoiceCoilCount: voiceCoilCount,
+    driverCoilNominalOhms: coilNominalOhms,
+    driverCoilReOhms: coilReOhms,
+    driverCoilLeMh: preset.le ?? 1.4,
+    driverCoilWiring: coilWiring,
+  };
 }
 
 export function SidebarControls({
@@ -159,12 +159,9 @@ export function SidebarControls({
   onApplyTemplate,
   onSaveCustomDriver,
   onDeleteCustomDriver,
+  onOpenDriverModal,
 }: SidebarControlsProps) {
   const [openSection, setOpenSection] = useState<'box' | 'port' | 'driver'>('box');
-  const [addingDriver, setAddingDriver] = useState(false);
-  const [newDriverName, setNewDriverName] = useState('');
-  const [newDriverSize, setNewDriverSize] = useState('12"');
-  const [driverFormError, setDriverFormError] = useState<string | null>(null);
 
   const enclosureTypes: Array<{ id: EnclosureType; label: string }> = [
     { id: 'vented_slot', label: 'Szczelin.' },
@@ -174,71 +171,100 @@ export function SidebarControls({
     { id: 'bandpass_6th', label: 'BP 6-rz.' },
   ];
 
-  const allDrivers = [...DRIVER_PRESETS, ...customDrivers];
-  const activeCustomDriver = customDrivers.find((d) => d.id === params.driverPresetId);
+  const allDrivers = useMemo(
+    () => [...DRIVER_PRESETS, ...customDrivers],
+    [customDrivers],
+  );
+  const activeCustomDriver = useMemo(
+    () => customDrivers.find((d) => d.id === params.driverPresetId),
+    [customDrivers, params.driverPresetId],
+  );
+  const activeDriverPreset = useMemo(
+    () => allDrivers.find((d) => d.id === params.driverPresetId) ?? DRIVER_PRESETS[0],
+    [allDrivers, params.driverPresetId],
+  );
+
+  const elecLoad = useMemo(
+    () =>
+      computeElectricalLoad({
+        voiceCoilCount: params.driverVoiceCoilCount,
+        coilNominalOhms: params.driverCoilNominalOhms,
+        coilReOhms: params.driverCoilReOhms,
+        baseLeMh: params.driverCoilLeMh,
+        coilWiring: params.driverCoilWiring,
+        driverCount: params.driverCount,
+        arrayWiring: params.driverArrayWiring,
+      }),
+    [
+      params.driverVoiceCoilCount,
+      params.driverCoilNominalOhms,
+      params.driverCoilReOhms,
+      params.driverCoilLeMh,
+      params.driverCoilWiring,
+      params.driverCount,
+      params.driverArrayWiring,
+    ],
+  );
+
+  const liveDriverPreview = useMemo(() => {
+    const mergedPreset: DriverPreset = {
+      ...activeDriverPreset,
+      cutoutDia: params.driverCutoutDia,
+      outerDia: params.driverOuterDia,
+      depth: params.driverDepth,
+      displacement: params.driverDisplacement,
+      fs: params.driverFs,
+      qts: params.driverQts,
+      vas: params.driverVas,
+      xmax: params.driverXmax,
+      powerW: params.driverPowerW,
+      voiceCoilCount: params.driverVoiceCoilCount,
+      coilNominalOhms: params.driverCoilNominalOhms,
+      coilReOhms: params.driverCoilReOhms,
+      le: params.driverCoilLeMh,
+    };
+    return computeDerivedDriverMetrics(
+      params,
+      elecLoad.totalReOhms,
+      mergedPreset,
+      params.driverCoilWiring,
+      params.driverArrayWiring,
+    );
+  }, [activeDriverPreset, params, elecLoad.totalReOhms]);
 
   const handleDriverPresetChange = (presetId: string) => {
     const preset = allDrivers.find((d) => d.id === presetId);
     if (!preset) return;
-    onChange({
-      driverPresetId: preset.id,
-      driverName: preset.name,
-      driverCutoutDia: preset.cutoutDia,
-      driverOuterDia: preset.outerDia,
-      driverDepth: preset.depth,
-      driverDisplacement: preset.displacement,
-      driverFs: preset.fs,
-      driverQts: preset.qts,
-      driverVas: preset.vas,
-      driverXmax: preset.xmax,
-      driverPowerW: preset.powerW,
-    });
-  };
-
-  const handleCreateCustomDriver = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = newDriverName.trim();
-    if (!trimmed) {
-      setDriverFormError('Podaj nazwę własnego przetwornika.');
-      return;
-    }
-    setDriverFormError(null);
-    const id = `custom-${Date.now()}`;
-    const created: DriverPreset = {
-      id,
-      name: trimmed,
-      sizeLabel: newDriverSize.trim() || 'Custom',
-      isCustom: true,
-      cutoutDia: params.driverCutoutDia,
-      outerDia: params.driverOuterDia,
-      depth: params.driverDepth,
-      displacement: params.driverDisplacement,
-      fs: params.driverFs,
-      qts: params.driverQts,
-      vas: params.driverVas,
-      xmax: params.driverXmax,
-      powerW: params.driverPowerW,
-    };
-    onSaveCustomDriver(created);
-    onChange({ driverPresetId: created.id, driverName: created.name });
-    setNewDriverName('');
-    setAddingDriver(false);
+    onChange(buildPresetPatch(preset));
   };
 
   const handleUpdateActiveCustomDriver = () => {
     if (!activeCustomDriver) return;
-    onSaveCustomDriver({
-      ...activeCustomDriver,
-      cutoutDia: params.driverCutoutDia,
-      outerDia: params.driverOuterDia,
-      depth: params.driverDepth,
-      displacement: params.driverDisplacement,
-      fs: params.driverFs,
-      qts: params.driverQts,
-      vas: params.driverVas,
-      xmax: params.driverXmax,
-      powerW: params.driverPowerW,
-    });
+    const isDvc = params.driverVoiceCoilCount === 2;
+    const seriesRe = isDvc ? params.driverCoilReOhms * 2 : params.driverCoilReOhms;
+    const seriesZ = isDvc ? params.driverCoilNominalOhms * 2 : params.driverCoilNominalOhms;
+    onSaveCustomDriver(
+      {
+        ...activeCustomDriver,
+        cutoutDia: params.driverCutoutDia,
+        outerDia: params.driverOuterDia,
+        depth: params.driverDepth,
+        displacement: params.driverDisplacement,
+        fs: params.driverFs,
+        qts: params.driverQts,
+        vas: params.driverVas,
+        xmax: params.driverXmax,
+        powerW: params.driverPowerW,
+        voiceCoilCount: params.driverVoiceCoilCount,
+        coilNominalOhms: params.driverCoilNominalOhms,
+        coilReOhms: params.driverCoilReOhms,
+        re: Number(seriesRe.toFixed(2)),
+        le: params.driverCoilLeMh,
+        zNom: Number(seriesZ.toFixed(1)),
+      },
+      true,
+      params.driverCoilWiring,
+    );
   };
 
   const isBandpass =
@@ -361,7 +387,7 @@ export function SidebarControls({
           </button>
 
           {openSection === 'box' && (
-            <div className="px-4 pb-4 pt-1 space-y-3.5">
+            <div className="px-4 pb-4 pt-1 space-y-3">
               {/* Auto-calculated box dimension selector */}
               <div className="space-y-1.5">
                 <span className="block text-xs text-zinc-300">Wyliczaj automatycznie</span>
@@ -402,13 +428,13 @@ export function SidebarControls({
                   unit="mm"
                 />
               ) : (
-                <ParamSliderRow
+                <ImmediateNumberRow
                   id="ext-width"
                   label="Szerokość zewnętrzna (W)"
                   value={params.externalWidth}
-                  min={260}
-                  max={1400}
-                  step={5}
+                  min={220}
+                  max={1800}
+                  decimals={0}
                   unit="mm"
                   onChange={(externalWidth) => onChange({ externalWidth })}
                 />
@@ -422,13 +448,13 @@ export function SidebarControls({
                   unit="mm"
                 />
               ) : (
-                <ParamSliderRow
+                <ImmediateNumberRow
                   id="ext-height"
                   label="Wysokość zewnętrzna (H)"
                   value={params.externalHeight}
-                  min={220}
-                  max={950}
-                  step={5}
+                  min={180}
+                  max={1400}
+                  decimals={0}
                   unit="mm"
                   onChange={(externalHeight) => onChange({ externalHeight })}
                 />
@@ -442,13 +468,13 @@ export function SidebarControls({
                   unit="mm"
                 />
               ) : (
-                <ParamSliderRow
+                <ImmediateNumberRow
                   id="ext-depth"
                   label="Głębokość zewnętrzna (D)"
                   value={params.externalDepth}
-                  min={200}
-                  max={950}
-                  step={5}
+                  min={160}
+                  max={1400}
+                  decimals={0}
                   unit="mm"
                   onChange={(externalDepth) => onChange({ externalDepth })}
                 />
@@ -457,13 +483,13 @@ export function SidebarControls({
               {/* Target Net Volume & Auto Total Gross Volume */}
               <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-3 space-y-2.5">
                 {params.boxAutoCalcField !== 'none' ? (
-                  <ParamSliderRow
+                  <ImmediateNumberRow
                     id="target-net-vol"
                     label="Objętość netto (Vnet)"
                     value={params.targetNetVolumeL}
-                    min={8}
-                    max={450}
-                    step={0.5}
+                    min={6}
+                    max={800}
+                    decimals={1}
                     unit="L"
                     onChange={(targetNetVolumeL) => onChange({ targetNetVolumeL })}
                   />
@@ -538,28 +564,13 @@ export function SidebarControls({
                 </select>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <label htmlFor="double-baffle" className="text-xs text-zinc-300 cursor-pointer">
-                  {params.driverFace === 'top' && !isBandpass
-                    ? `Podwójna płyta górna (2× ${params.thickness} mm)`
-                    : `Podwójna ścianka przednia (2× ${params.thickness} mm)`}
-                </label>
-                <input
-                  id="double-baffle"
-                  type="checkbox"
-                  checked={params.doubleFrontBaffle}
-                  onChange={(e) => onChange({ doubleFrontBaffle: e.target.checked })}
-                  className="w-4 h-4 accent-red-500 rounded cursor-pointer"
-                />
-              </div>
-
-              <ParamSliderRow
+              <ImmediateNumberRow
                 id="bracing-vol"
                 label="Wyporność wzmocnień (Bracing)"
                 value={params.bracingVolumeL}
                 min={0}
-                max={16}
-                step={0.2}
+                max={30}
+                decimals={2}
                 unit="L"
                 onChange={(bracingVolumeL) => onChange({ bracingVolumeL })}
               />
@@ -595,7 +606,7 @@ export function SidebarControls({
           </button>
 
           {openSection === 'port' && (
-            <div className="px-4 pb-4 pt-1 space-y-3.5">
+            <div className="px-4 pb-4 pt-1 space-y-3">
               {params.enclosureType !== 'sealed' && (
                 <div className="space-y-1.5">
                   <span className="block text-xs text-zinc-300">Wyliczaj automatycznie (port)</span>
@@ -734,29 +745,24 @@ export function SidebarControls({
                   )}
 
                   {params.portControlMode === 'tuning' ? (
-                    <div className="space-y-3 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
-                      <div className="space-y-1">
-                        <ParamSliderRow
-                          id="target-fb-round"
-                          label="Strojenie portu Fb"
-                          value={params.targetTuningHz}
-                          min={20}
-                          max={75}
-                          step={0.5}
-                          unit="Hz"
-                          onChange={(targetTuningHz) => onChange({ targetTuningHz })}
-                        />
-                        <p className="text-[11px] text-zinc-500 leading-snug">
-                          Częstotliwość strojenia obudowy (Fb). Uniwersalne strojenie pasujące do większości subwooferów to 36 Hz.
-                        </p>
-                      </div>
-                      <ParamSliderRow
+                    <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
+                      <ImmediateNumberRow
+                        id="target-fb-round"
+                        label="Strojenie portu Fb"
+                        value={params.targetTuningHz}
+                        min={15}
+                        max={90}
+                        decimals={1}
+                        unit="Hz"
+                        onChange={(targetTuningHz) => onChange({ targetTuningHz })}
+                      />
+                      <ImmediateNumberRow
                         id="target-area-round"
                         label="Pole przekroju portu"
                         value={params.targetPortAreaCm2}
-                        min={20}
-                        max={1200}
-                        step={5}
+                        min={15}
+                        max={2500}
+                        decimals={1}
                         unit="cm²"
                         onChange={(targetPortAreaCm2) => onChange({ targetPortAreaCm2 })}
                       />
@@ -782,24 +788,24 @@ export function SidebarControls({
                       </div>
                     </div>
                   ) : params.portControlMode === 'area_from_length' ? (
-                    <div className="space-y-3 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
-                      <ParamSliderRow
+                    <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
+                      <ImmediateNumberRow
                         id="target-fb-round-len"
                         label="Strojenie portu Fb"
                         value={params.targetTuningHz}
-                        min={20}
-                        max={75}
-                        step={0.5}
+                        min={15}
+                        max={90}
+                        decimals={1}
                         unit="Hz"
                         onChange={(targetTuningHz) => onChange({ targetTuningHz })}
                       />
-                      <ParamSliderRow
+                      <ImmediateNumberRow
                         id="port-len-round"
                         label="Długość rury (L)"
                         value={params.portLength}
-                        min={60}
-                        max={950}
-                        step={5}
+                        min={40}
+                        max={1600}
+                        decimals={0}
                         unit="mm"
                         onChange={(portLength) => onChange({ portLength })}
                       />
@@ -826,23 +832,23 @@ export function SidebarControls({
                     </div>
                   ) : (
                     <>
-                      <ParamSliderRow
+                      <ImmediateNumberRow
                         id="port-dia"
                         label="Średnica wewnętrzna rury"
                         value={params.portDiameter}
-                        min={50}
-                        max={250}
-                        step={5}
+                        min={35}
+                        max={350}
+                        decimals={0}
                         unit="mm"
                         onChange={(portDiameter) => onChange({ portDiameter })}
                       />
-                      <ParamSliderRow
+                      <ImmediateNumberRow
                         id="port-len-round"
                         label="Długość rury (L)"
                         value={params.portLength}
-                        min={100}
-                        max={650}
-                        step={5}
+                        min={40}
+                        max={1400}
+                        decimals={0}
                         unit="mm"
                         onChange={(portLength) => onChange({ portLength })}
                       />
@@ -884,7 +890,7 @@ export function SidebarControls({
                         </button>
                       )}
                     </div>
-                    <ParamSliderRow
+                    <ImmediateNumberRow
                       id="port-offset-x"
                       label={
                         params.portFace === 'side_left' || params.portFace === 'side_right'
@@ -894,11 +900,11 @@ export function SidebarControls({
                       value={params.portOffsetX}
                       min={acoustics.offsetBounds.portMinX}
                       max={acoustics.offsetBounds.portMaxX}
-                      step={5}
+                      decimals={0}
                       unit="mm"
                       onChange={(portOffsetX) => onChange({ portOffsetX })}
                     />
-                    <ParamSliderRow
+                    <ImmediateNumberRow
                       id="port-offset-y"
                       label={
                         params.portFace === 'top'
@@ -908,7 +914,7 @@ export function SidebarControls({
                       value={params.portOffsetY}
                       min={acoustics.offsetBounds.portMinY}
                       max={acoustics.offsetBounds.portMaxY}
-                      step={5}
+                      decimals={0}
                       unit="mm"
                       onChange={(portOffsetY) => onChange({ portOffsetY })}
                     />
@@ -929,13 +935,13 @@ export function SidebarControls({
               ) : (
                 <>
                   {isBandpass && (
-                    <ParamSliderRow
+                    <ImmediateNumberRow
                       id="bp-ratio"
                       label="Podział komór (komora przednia)"
                       value={Math.round(params.bandpassFrontRatio * 100)}
-                      min={28}
-                      max={70}
-                      step={1}
+                      min={25}
+                      max={75}
+                      decimals={0}
                       unit="%"
                       onChange={(pct) => onChange({ bandpassFrontRatio: pct / 100 })}
                     />
@@ -994,7 +1000,7 @@ export function SidebarControls({
                     />
                   </div>
                   {!params.portFullHeight && (
-                    <ParamSliderRow
+                    <ImmediateNumberRow
                       id="port-height"
                       label={
                         !isBandpass && params.portSlotSide === 'bottom'
@@ -1002,42 +1008,37 @@ export function SidebarControls({
                           : 'Wysokość szczeliny (Hp)'
                       }
                       value={params.portHeight}
-                      min={40}
+                      min={30}
                       max={
                         !isBandpass && params.portSlotSide === 'bottom'
                           ? Math.round(acoustics.internalWidth)
                           : Math.round(acoustics.internalHeight)
                       }
-                      step={2}
+                      decimals={0}
                       unit="mm"
                       onChange={(portHeight) => onChange({ portHeight })}
                     />
                   )}
 
                   {params.portControlMode === 'tuning' ? (
-                    <div className="space-y-3 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
-                      <div className="space-y-1">
-                        <ParamSliderRow
-                          id="target-fb-slot"
-                          label="Strojenie portu Fb"
-                          value={params.targetTuningHz}
-                          min={20}
-                          max={80}
-                          step={0.5}
-                          unit="Hz"
-                          onChange={(targetTuningHz) => onChange({ targetTuningHz })}
-                        />
-                        <p className="text-[11px] text-zinc-500 leading-snug">
-                          Częstotliwość strojenia obudowy (Fb). Uniwersalne strojenie pasujące do większości subwooferów to 36 Hz.
-                        </p>
-                      </div>
-                      <ParamSliderRow
+                    <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
+                      <ImmediateNumberRow
+                        id="target-fb-slot"
+                        label="Strojenie portu Fb"
+                        value={params.targetTuningHz}
+                        min={15}
+                        max={90}
+                        decimals={1}
+                        unit="Hz"
+                        onChange={(targetTuningHz) => onChange({ targetTuningHz })}
+                      />
+                      <ImmediateNumberRow
                         id="target-area-slot"
                         label="Pole przekroju portu"
                         value={params.targetPortAreaCm2}
-                        min={20}
-                        max={1200}
-                        step={5}
+                        min={15}
+                        max={2500}
+                        decimals={1}
                         unit="cm²"
                         onChange={(targetPortAreaCm2) => onChange({ targetPortAreaCm2 })}
                       />
@@ -1067,24 +1068,24 @@ export function SidebarControls({
                       </div>
                     </div>
                   ) : params.portControlMode === 'area_from_length' ? (
-                    <div className="space-y-3 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
-                      <ParamSliderRow
+                    <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
+                      <ImmediateNumberRow
                         id="target-fb-slot-len"
                         label="Strojenie portu Fb"
                         value={params.targetTuningHz}
-                        min={20}
-                        max={80}
-                        step={0.5}
+                        min={15}
+                        max={90}
+                        decimals={1}
                         unit="Hz"
                         onChange={(targetTuningHz) => onChange({ targetTuningHz })}
                       />
-                      <ParamSliderRow
+                      <ImmediateNumberRow
                         id="port-len-slot"
                         label="Długość efektywna tunelu (L)"
                         value={params.portLength}
-                        min={80}
-                        max={1400}
-                        step={5}
+                        min={50}
+                        max={2200}
+                        decimals={0}
                         unit="mm"
                         onChange={(portLength) => onChange({ portLength })}
                       />
@@ -1115,7 +1116,7 @@ export function SidebarControls({
                     </div>
                   ) : (
                     <>
-                      <ParamSliderRow
+                      <ImmediateNumberRow
                         id="port-width"
                         label={
                           !isBandpass && params.portSlotSide === 'bottom'
@@ -1123,19 +1124,19 @@ export function SidebarControls({
                             : 'Szerokość szczeliny (Wp)'
                         }
                         value={params.portWidth}
-                        min={20}
-                        max={160}
-                        step={2}
+                        min={16}
+                        max={240}
+                        decimals={0}
                         unit="mm"
                         onChange={(portWidth) => onChange({ portWidth })}
                       />
-                      <ParamSliderRow
+                      <ImmediateNumberRow
                         id="port-len-slot"
                         label="Długość efektywna tunelu (L)"
                         value={params.portLength}
-                        min={100}
-                        max={950}
-                        step={5}
+                        min={50}
+                        max={2000}
+                        decimals={0}
                         unit="mm"
                         onChange={(portLength) => onChange({ portLength })}
                       />
@@ -1164,7 +1165,7 @@ export function SidebarControls({
 
                   {/* Rear Port controls strictly for Bandpass 6th-order */}
                   {params.enclosureType === 'bandpass_6th' && (
-                    <div className="pt-3 mt-2 border-t border-white/[0.08] space-y-3.5">
+                    <div className="pt-3 mt-2 border-t border-white/[0.08] space-y-3">
                       <div className="text-[11px] font-semibold text-cyan-400">
                         Port tylny — niskie strojenie (Fb-low)
                       </div>
@@ -1181,36 +1182,36 @@ export function SidebarControls({
                         />
                       </div>
                       {!params.portRearFullHeight && (
-                        <ParamSliderRow
+                        <ImmediateNumberRow
                           id="rear-port-height"
                           label="Wysokość portu tylnego"
                           value={params.portRearHeight}
-                          min={40}
+                          min={30}
                           max={Math.round(acoustics.internalHeight)}
-                          step={2}
+                          decimals={0}
                           unit="mm"
                           onChange={(portRearHeight) => onChange({ portRearHeight })}
                         />
                       )}
                       {params.portControlMode === 'tuning' ? (
                         <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
-                          <ParamSliderRow
+                          <ImmediateNumberRow
                             id="rear-target-fb"
                             label="Strojenie portu tylnego (Fb-low)"
                             value={params.targetRearTuningHz}
-                            min={18}
-                            max={60}
-                            step={0.5}
+                            min={14}
+                            max={70}
+                            decimals={1}
                             unit="Hz"
                             onChange={(targetRearTuningHz) => onChange({ targetRearTuningHz })}
                           />
-                          <ParamSliderRow
+                          <ImmediateNumberRow
                             id="rear-target-area"
                             label="Pole portu tylnego"
                             value={params.targetRearPortAreaCm2}
-                            min={20}
-                            max={900}
-                            step={5}
+                            min={15}
+                            max={1500}
+                            decimals={1}
                             unit="cm²"
                             onChange={(targetRearPortAreaCm2) => onChange({ targetRearPortAreaCm2 })}
                           />
@@ -1229,23 +1230,23 @@ export function SidebarControls({
                         </div>
                       ) : params.portControlMode === 'area_from_length' ? (
                         <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
-                          <ParamSliderRow
+                          <ImmediateNumberRow
                             id="rear-target-fb-len"
                             label="Strojenie portu tylnego (Fb-low)"
                             value={params.targetRearTuningHz}
-                            min={18}
-                            max={60}
-                            step={0.5}
+                            min={14}
+                            max={70}
+                            decimals={1}
                             unit="Hz"
                             onChange={(targetRearTuningHz) => onChange({ targetRearTuningHz })}
                           />
-                          <ParamSliderRow
+                          <ImmediateNumberRow
                             id="rear-port-len"
                             label="Długość portu tylnego"
                             value={params.portRearLength}
-                            min={120}
-                            max={1200}
-                            step={5}
+                            min={60}
+                            max={2000}
+                            decimals={0}
                             unit="mm"
                             onChange={(portRearLength) => onChange({ portRearLength })}
                           />
@@ -1258,23 +1259,23 @@ export function SidebarControls({
                         </div>
                       ) : (
                         <>
-                          <ParamSliderRow
+                          <ImmediateNumberRow
                             id="rear-port-width"
                             label="Szerokość portu tylnego"
                             value={params.portRearWidth}
-                            min={20}
-                            max={140}
-                            step={2}
+                            min={16}
+                            max={200}
+                            decimals={0}
                             unit="mm"
                             onChange={(portRearWidth) => onChange({ portRearWidth })}
                           />
-                          <ParamSliderRow
+                          <ImmediateNumberRow
                             id="rear-port-len"
                             label="Długość portu tylnego"
                             value={params.portRearLength}
-                            min={120}
-                            max={950}
-                            step={5}
+                            min={60}
+                            max={2000}
+                            decimals={0}
                             unit="mm"
                             onChange={(portRearLength) => onChange({ portRearLength })}
                           />
@@ -1311,7 +1312,7 @@ export function SidebarControls({
           )}
         </div>
 
-        {/* Section 3: Driver & Thiele-Small Parameters + Custom Drivers */}
+        {/* Section 3: Driver, Coils, Wiring, Custom Drivers & Parameter Preview */}
         <div>
           <button
             type="button"
@@ -1334,22 +1335,19 @@ export function SidebarControls({
 
           {openSection === 'driver' && (
             <div className="px-4 pb-4 pt-1 space-y-3.5">
-              {/* Driver selector + Add Custom Driver toggle */}
+              {/* Driver selector + Modal Add/Edit/Clone synchronized with WSD */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label htmlFor="driver-preset" className="text-xs text-zinc-300">
                     Profil przetwornika
                   </label>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAddingDriver((v) => !v);
-                      setDriverFormError(null);
-                    }}
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-red-400 hover:text-red-300 transition-colors"
+                    onClick={() => onOpenDriverModal(null, activeDriverPreset)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-300 transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>{addingDriver ? 'Anuluj' : 'Dodaj własny głośnik'}</span>
+                    <span>Nowy / T-S</span>
                   </button>
                 </div>
 
@@ -1359,87 +1357,238 @@ export function SidebarControls({
                   onChange={(e) => handleDriverPresetChange(e.target.value)}
                   className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
                 >
-                  <optgroup label="Predefiniowane przetworniki">
+                  <optgroup label="Domyślny głośnik (Deaf Bonce)">
                     {DRIVER_PRESETS.map((drv) => (
                       <option key={drv.id} value={drv.id}>
-                        {drv.name}
+                        {drv.name} ({drv.voiceCoilCount === 2 ? `DVC ${drv.coilNominalOhms}Ω` : `SVC ${drv.coilNominalOhms}Ω`})
                       </option>
                     ))}
                   </optgroup>
                   {customDrivers.length > 0 && (
-                    <optgroup label="Własne przetworniki">
+                    <optgroup label="Własne przetworniki (sync WSD)">
                       {customDrivers.map((drv) => (
                         <option key={drv.id} value={drv.id}>
-                          {drv.name} ({drv.sizeLabel})
+                          {drv.name} ({drv.sizeLabel} · {drv.voiceCoilCount === 2 ? `2×${drv.coilNominalOhms ?? 2}Ω` : `1×${drv.coilNominalOhms ?? 4}Ω`})
                         </option>
                       ))}
                     </optgroup>
                   )}
                 </select>
 
-                {/* Save / Delete actions when a custom driver is currently selected */}
-                {activeCustomDriver && !addingDriver && (
-                  <div className="flex items-center justify-end gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] text-zinc-500 font-mono-num">
+                    Źródło: {activeDriverPreset.source ?? (activeDriverPreset.isCustom ? 'Własny T-S' : 'Deaf Bonce')}
+                  </span>
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={handleUpdateActiveCustomDriver}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-zinc-200 bg-[#161920] border border-white/[0.12] rounded hover:bg-white/10 transition-colors"
+                      onClick={() => onOpenDriverModal(activeCustomDriver ?? null, activeDriverPreset)}
+                      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-200 bg-[#161920] border border-white/[0.12] rounded hover:bg-white/10 transition-colors"
                     >
-                      <Save className="w-3 h-3 text-red-400" />
-                      <span>Nadpisz parametry</span>
+                      <Edit3 className="w-3 h-3 text-cyan-300" />
+                      <span>{activeCustomDriver ? 'Edytuj T-S' : 'Klonuj do własnych'}</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onDeleteCustomDriver(activeCustomDriver.id);
-                        handleDriverPresetChange(DRIVER_PRESETS[0].id);
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-rose-300 bg-rose-500/10 border border-rose-500/25 rounded hover:bg-rose-500/20 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>Usuń</span>
-                    </button>
+
+                    {activeCustomDriver && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleUpdateActiveCustomDriver}
+                          title="Zapisz bieżące zmiany do własnego głośnika i zsynchronizuj z WSD"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-200 bg-[#161920] border border-white/[0.12] rounded hover:bg-white/10 transition-colors"
+                        >
+                          <Save className="w-3 h-3 text-red-400" />
+                          <span>Nadpisz</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onDeleteCustomDriver(activeCustomDriver.id);
+                            handleDriverPresetChange(DRIVER_PRESETS[0].id);
+                          }}
+                          title="Usuń własny głośnik"
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-rose-300 bg-rose-500/10 border border-rose-500/25 rounded hover:bg-rose-500/20 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Voice Coils & Wiring Block */}
+              <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-zinc-200">Cewki i łączenie głośników</span>
+                  <div className="grid grid-cols-2 gap-1 bg-[#111318] p-0.5 rounded border border-white/[0.08]">
+                    {([1, 2] as const).map((vc) => (
+                      <button
+                        key={vc}
+                        type="button"
+                        onClick={() =>
+                          onChange({
+                            driverVoiceCoilCount: vc,
+                            driverCoilWiring:
+                              vc === 2
+                                ? params.driverCoilWiring === 'series'
+                                  ? 'series'
+                                  : 'parallel'
+                                : 'single',
+                          })
+                        }
+                        className={`px-2 py-0.5 text-[11px] font-mono-num rounded transition-colors ${
+                          params.driverVoiceCoilCount === vc
+                            ? 'bg-red-600 text-white font-semibold'
+                            : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {vc === 1 ? '1× SVC' : '2× DVC'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[11px] text-zinc-400 block">Z cewki (Ω)</span>
+                    <ImmediateNumberInput
+                      id="drv-coil-z"
+                      value={params.driverCoilNominalOhms}
+                      min={0.5}
+                      max={16}
+                      decimals={2}
+                      onChange={(driverCoilNominalOhms) => onChange({ driverCoilNominalOhms })}
+                      className="w-full bg-[#111318] border border-white/[0.12] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[11px] text-zinc-400 block">Re cewki (Ω)</span>
+                    <ImmediateNumberInput
+                      id="drv-coil-re"
+                      value={params.driverCoilReOhms}
+                      min={0.2}
+                      max={16}
+                      decimals={2}
+                      onChange={(driverCoilReOhms) => onChange({ driverCoilReOhms })}
+                      className="w-full bg-[#111318] border border-white/[0.12] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
+                    />
+                  </label>
+                </div>
+
+                {params.driverVoiceCoilCount === 2 && (
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-zinc-400 block">Łączenie cewek (wewnątrz)</span>
+                    <div className="grid grid-cols-2 gap-1 bg-[#111318] p-0.5 rounded border border-white/[0.08]">
+                      {(
+                        [
+                          { id: 'parallel', label: 'Równoległe' },
+                          { id: 'series', label: 'Szeregowe' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => onChange({ driverCoilWiring: opt.id })}
+                          className={`py-1 text-[11px] rounded transition-colors ${
+                            elecLoad.effectiveCoilWiring === opt.id
+                              ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/40'
+                              : 'text-zinc-400 hover:text-white border border-transparent'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {/* Inline form to save current T-S specs as a new Custom Driver */}
-                {addingDriver && (
-                  <form
-                    onSubmit={handleCreateCustomDriver}
-                    className="bg-[#08090C] border border-red-500/35 rounded-md p-3 space-y-2.5"
-                  >
-                    <div className="text-xs font-medium text-white">
-                      Zapisz własny przetwornik (używa poniższych parametrów T-S)
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <input
-                        type="text"
-                        aria-label="Nazwa własnego głośnika"
-                        placeholder="np. Sundown SA-12"
-                        value={newDriverName}
-                        onChange={(e) => setNewDriverName(e.target.value)}
-                        className="col-span-2 bg-[#111318] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-red-500"
-                      />
-                      <input
-                        type="text"
-                        aria-label="Rozmiar głośnika"
-                        placeholder='12"'
-                        value={newDriverSize}
-                        onChange={(e) => setNewDriverSize(e.target.value)}
-                        className="bg-[#111318] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-red-500"
-                      />
-                    </div>
-                    {driverFormError && (
-                      <div className="text-[11px] text-rose-400">{driverFormError}</div>
-                    )}
-                    <button
-                      type="submit"
-                      className="w-full py-1.5 text-xs font-semibold text-white bg-red-600 rounded hover:bg-red-500 transition-colors"
+                {params.driverCount >= 2 && (
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-zinc-400 block">
+                      Łączenie głośników ({params.driverCount} szt.)
+                    </span>
+                    <div
+                      className={`grid gap-1 bg-[#111318] p-0.5 rounded border border-white/[0.08] ${
+                        params.driverCount === 4 || params.driverCount === 6
+                          ? 'grid-cols-3'
+                          : 'grid-cols-2'
+                      }`}
                     >
-                      Zapisz do własnych przetworników
-                    </button>
-                  </form>
+                      {(
+                        [
+                          { id: 'parallel', label: 'Równoległe' },
+                          { id: 'series', label: 'Szeregowe' },
+                          ...(params.driverCount === 4
+                            ? [{ id: 'series_parallel' as const, label: '2S2P' }]
+                            : params.driverCount === 6
+                              ? [{ id: 'series_parallel' as const, label: '2S3P' }]
+                              : []),
+                        ] as Array<{ id: DriverWiringType; label: string }>
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => onChange({ driverArrayWiring: opt.id })}
+                          className={`py-1 text-[11px] rounded transition-colors whitespace-nowrap ${
+                            params.driverArrayWiring === opt.id
+                              ? 'bg-red-600 text-white font-semibold'
+                              : 'text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
+
+                <div
+                  data-testid="sidebar-impedance-summary"
+                  className="pt-1.5 border-t border-white/[0.08] flex items-center justify-between gap-2 text-[11px] font-mono-num"
+                >
+                  <span className="text-zinc-400 font-sans">Wypadkowo:</span>
+                  <span className="text-cyan-300 font-semibold text-right">
+                    {elecLoad.totalNominalOhms.toFixed(2).replace(/\.00$/, '.0')} Ω · Re{' '}
+                    {elecLoad.totalReOhms.toFixed(2)} Ω
+                  </span>
+                </div>
+              </div>
+
+              {/* Compact Live Parameter Preview Card */}
+              <div
+                data-testid="sidebar-driver-preview"
+                className="bg-[#08090C] border border-cyan-500/25 rounded-md p-2.5 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-cyan-300">
+                    Podgląd parametrów
+                  </span>
+                  <span className="text-[10px] font-mono-num text-zinc-400 truncate max-w-[180px]">
+                    {elecLoad.wiringSummaryLabel}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 text-[10px] font-mono-num">
+                  {[
+                    { label: 'Fs', val: `${liveDriverPreview.fs.toFixed(1)} Hz` },
+                    { label: 'Qts', val: liveDriverPreview.qts.toFixed(3) },
+                    { label: 'Vas', val: `${liveDriverPreview.vas.toFixed(1)} L` },
+                    { label: 'EBP', val: `${liveDriverPreview.ebpHz.toFixed(0)} Hz` },
+                    { label: 'SPL 1W', val: `${liveDriverPreview.spl1w1m.toFixed(1)} dB` },
+                    { label: '2.83V', val: `${liveDriverPreview.spl283v1m.toFixed(1)} dB` },
+                    { label: 'Bl', val: `${liveDriverPreview.bl.toFixed(1)} Tm` },
+                    { label: 'Mms', val: `${Math.round(liveDriverPreview.mms)} g` },
+                    { label: 'Vd łącz.', val: `${Math.round(liveDriverPreview.vdCm3)} cm³` },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="px-1.5 py-1 rounded bg-[#111318] border border-white/[0.06] flex flex-col"
+                    >
+                      <span className="text-zinc-500">{item.label}</span>
+                      <strong className="text-zinc-100">{item.val}</strong>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Driver count: 1 to 6 */}
@@ -1540,7 +1689,7 @@ export function SidebarControls({
                 </div>
               )}
 
-              {/* Driver X/Y positioning offset sliders */}
+              {/* Driver X/Y positioning offsets */}
               <div className="pt-2 border-t border-white/[0.08] space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium text-zinc-300">
@@ -1556,17 +1705,17 @@ export function SidebarControls({
                     </button>
                   )}
                 </div>
-                <ParamSliderRow
+                <ImmediateNumberRow
                   id="drv-offset-x"
                   label={isBandpass ? 'Przesunięcie (Tył / Przód)' : 'Przesunięcie (Lewo / Prawo)'}
                   value={params.driverOffsetX}
                   min={acoustics.offsetBounds.driverMinX}
                   max={acoustics.offsetBounds.driverMaxX}
-                  step={5}
+                  decimals={0}
                   unit="mm"
                   onChange={(driverOffsetX) => onChange({ driverOffsetX })}
                 />
-                <ParamSliderRow
+                <ImmediateNumberRow
                   id="drv-offset-y"
                   label={
                     params.driverFace === 'top' && !isBandpass
@@ -1576,54 +1725,54 @@ export function SidebarControls({
                   value={params.driverOffsetY}
                   min={acoustics.offsetBounds.driverMinY}
                   max={acoustics.offsetBounds.driverMaxY}
-                  step={5}
+                  decimals={0}
                   unit="mm"
                   onChange={(driverOffsetY) => onChange({ driverOffsetY })}
                 />
               </div>
 
-              <ParamSliderRow
+              <ImmediateNumberRow
                 id="drv-cutout"
                 label="Średnica otworu montażowego"
                 value={params.driverCutoutDia}
-                min={100}
-                max={460}
-                step={2}
+                min={80}
+                max={520}
+                decimals={0}
                 unit="mm"
                 onChange={(driverCutoutDia) =>
                   onChange({
                     driverCutoutDia,
-                    driverOuterDia: Math.max(driverCutoutDia + 28, params.driverOuterDia),
+                    driverOuterDia: Math.max(driverCutoutDia + 20, params.driverOuterDia),
                   })
                 }
               />
-              <ParamSliderRow
+              <ImmediateNumberRow
                 id="drv-outer"
                 label="Średnica zewnętrzna kosza"
                 value={params.driverOuterDia}
-                min={120}
-                max={500}
-                step={2}
+                min={100}
+                max={580}
+                decimals={0}
                 unit="mm"
                 onChange={(driverOuterDia) => onChange({ driverOuterDia })}
               />
-              <ParamSliderRow
+              <ImmediateNumberRow
                 id="drv-depth"
                 label="Głębokość montażowa"
                 value={params.driverDepth}
-                min={60}
-                max={360}
-                step={2}
+                min={40}
+                max={420}
+                decimals={0}
                 unit="mm"
                 onChange={(driverDepth) => onChange({ driverDepth })}
               />
-              <ParamSliderRow
+              <ImmediateNumberRow
                 id="drv-disp"
                 label="Wyporność głośnika (1 szt.)"
                 value={params.driverDisplacement}
-                min={0.4}
-                max={12}
-                step={0.1}
+                min={0.2}
+                max={25}
+                decimals={2}
                 unit="L"
                 onChange={(driverDisplacement) => onChange({ driverDisplacement })}
               />
@@ -1633,12 +1782,13 @@ export function SidebarControls({
                   <label htmlFor="drv-fs" className="block text-[11px] text-zinc-400 mb-1">
                     Rezonans Fs (Hz)
                   </label>
-                  <input
+                  <ImmediateNumberInput
                     id="drv-fs"
-                    type="number"
-                    step={0.5}
                     value={params.driverFs}
-                    onChange={(e) => onChange({ driverFs: Math.max(15, Number(e.target.value) || 30) })}
+                    min={10}
+                    max={250}
+                    decimals={2}
+                    onChange={(driverFs) => onChange({ driverFs })}
                     className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                   />
                 </div>
@@ -1646,12 +1796,13 @@ export function SidebarControls({
                   <label htmlFor="drv-qts" className="block text-[11px] text-zinc-400 mb-1">
                     Dobroć Qts
                   </label>
-                  <input
+                  <ImmediateNumberInput
                     id="drv-qts"
-                    type="number"
-                    step={0.01}
                     value={params.driverQts}
-                    onChange={(e) => onChange({ driverQts: Math.max(0.15, Number(e.target.value) || 0.4) })}
+                    min={0.1}
+                    max={2.0}
+                    decimals={3}
+                    onChange={(driverQts) => onChange({ driverQts })}
                     className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                   />
                 </div>
@@ -1659,12 +1810,13 @@ export function SidebarControls({
                   <label htmlFor="drv-vas" className="block text-[11px] text-zinc-400 mb-1">
                     Objętość Vas (L)
                   </label>
-                  <input
+                  <ImmediateNumberInput
                     id="drv-vas"
-                    type="number"
-                    step={1}
                     value={params.driverVas}
-                    onChange={(e) => onChange({ driverVas: Math.max(5, Number(e.target.value) || 40) })}
+                    min={1}
+                    max={1000}
+                    decimals={2}
+                    onChange={(driverVas) => onChange({ driverVas })}
                     className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                   />
                 </div>
@@ -1673,20 +1825,22 @@ export function SidebarControls({
                     Xmax (mm) · RMS (W)
                   </label>
                   <div className="flex gap-1.5">
-                    <input
+                    <ImmediateNumberInput
                       id="drv-xmax"
-                      type="number"
-                      step={1}
                       value={params.driverXmax}
-                      onChange={(e) => onChange({ driverXmax: Math.max(4, Number(e.target.value) || 12) })}
+                      min={1}
+                      max={80}
+                      decimals={1}
+                      onChange={(driverXmax) => onChange({ driverXmax })}
                       className="w-1/2 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                     />
-                    <input
+                    <ImmediateNumberInput
                       aria-label="Moc RMS (W)"
-                      type="number"
-                      step={50}
                       value={params.driverPowerW}
-                      onChange={(e) => onChange({ driverPowerW: Math.max(50, Number(e.target.value) || 500) })}
+                      min={25}
+                      max={15000}
+                      decimals={0}
+                      onChange={(driverPowerW) => onChange({ driverPowerW })}
                       className="w-1/2 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                     />
                   </div>

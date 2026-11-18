@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { calculateAcoustics } from './acoustics';
-import { DEFAULT_BOX_PARAMS, DRIVER_PRESETS } from './presets';
+import {
+  BOX_TEMPLATE_PRESETS,
+  DEFAULT_BOX_PARAMS,
+  DRIVER_PRESETS,
+} from './presets';
 import {
   computeDriverAlignments,
   computePortPhysicalStats,
   simulateEnclosureSeries,
   type SignalChainConfig,
 } from './simulator';
-import { driverPresetToSolverInput, solveThieleSmall } from './tsSolver';
+import {
+  computeElectricalLoad,
+  driverPresetToSolverInput,
+  solveThieleSmall,
+} from './tsSolver';
 
 const BASE_SIGNAL: SignalChainConfig = {
   powerW: 1200,
@@ -23,7 +31,7 @@ const BASE_SIGNAL: SignalChainConfig = {
   cabinGain: false,
 };
 
-test('Deaf Bonce Machete MF-12R D2 datasheet T-S solver matches catalog parameters and WinISD formulas', () => {
+test('Deaf Bonce Machete MF-12R D2 datasheet T-S solver matches catalog parameters and WSD formulas', () => {
   const mf12r = DRIVER_PRESETS.find((d) => d.id === 'deaf-bonce-mf12r-d2');
   assert.ok(mf12r, 'MF-12R D2 preset must exist');
 
@@ -64,7 +72,7 @@ test('Deaf Bonce Machete MF-12R D2 datasheet T-S solver matches catalog paramete
   assert.ok(Math.abs(box.netVolumeL - 55) < 0.1);
   assert.ok(box.tuningHz !== null && Math.abs(box.tuningHz - 35) < 0.15);
 
-  // Compare WSD round-port vs slot-port calculation & alignments
+  // Compare WSD round-port physical calculation & alignments
   const roundStats = computePortPhysicalStats(55, 35, 157.1, true, 343.2, 100);
   assert.ok(roundStats !== null && roundStats.lengthMm > 580 && roundStats.lengthMm < 660, `lengthMm=${roundStats?.lengthMm}`);
 
@@ -116,4 +124,80 @@ test('Deaf Bonce Machete MF-12R D2 datasheet T-S solver matches catalog paramete
   );
   assert.ok(simCheb.f3LowHz <= simSbb4.f3LowHz + 3);
   assert.ok(simCheb.peakSplDb > simSbb4.peakSplDb - 0.5);
+});
+
+test('Default catalog contains only Deaf Bonce MF-12R D2 and solves cleanly across all templates', () => {
+  assert.equal(DRIVER_PRESETS.length, 1);
+  assert.equal(DRIVER_PRESETS[0].id, 'deaf-bonce-mf12r-d2');
+
+  for (const removedId of [
+    '12-sql-daily',
+    '12-spl-monster',
+    '10-compact',
+    '15-low-end',
+    '8-underseat',
+    'dayton-um12-22',
+    'alpine-swr-12d4',
+  ]) {
+    assert.equal(
+      DRIVER_PRESETS.some((d) => d.id === removedId),
+      false,
+      `Removed preset ${removedId} should not remain`,
+    );
+  }
+
+  for (const tpl of BOX_TEMPLATE_PRESETS) {
+    const res = calculateAcoustics({ ...DEFAULT_BOX_PARAMS, ...tpl.params });
+    const errors = res.issues.filter((i) => i.severity === 'error');
+    assert.equal(errors.length, 0, `Template ${tpl.id} has geometry errors: ${errors.map((e) => e.message).join('; ')}`);
+    assert.ok(res.netVolumeL > 0, `Template ${tpl.id} netVolumeL=${res.netVolumeL}`);
+  }
+});
+
+test('Electrical load solver computes exact series, parallel, and 2S2P impedances for DVC and SVC arrays', () => {
+  const mf12r = DRIVER_PRESETS.find((d) => d.id === 'deaf-bonce-mf12r-d2')!;
+
+  const singleParallel = computeElectricalLoad({
+    voiceCoilCount: mf12r.voiceCoilCount!,
+    coilNominalOhms: mf12r.coilNominalOhms!,
+    coilReOhms: mf12r.coilReOhms!,
+    baseLeMh: mf12r.le ?? 2.2,
+    coilWiring: 'parallel',
+    driverCount: 1,
+    arrayWiring: 'parallel',
+  });
+  assert.equal(singleParallel.totalNominalOhms, 1);
+
+  const singleSeries = computeElectricalLoad({
+    voiceCoilCount: mf12r.voiceCoilCount!,
+    coilNominalOhms: mf12r.coilNominalOhms!,
+    coilReOhms: mf12r.coilReOhms!,
+    baseLeMh: mf12r.le ?? 2.2,
+    coilWiring: 'series',
+    driverCount: 1,
+    arrayWiring: 'parallel',
+  });
+  assert.equal(singleSeries.totalNominalOhms, 4);
+
+  const quad2s2p = computeElectricalLoad({
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.8,
+    baseLeMh: 2.2,
+    coilWiring: 'parallel',
+    driverCount: 4,
+    arrayWiring: 'series_parallel',
+  });
+  assert.equal(quad2s2p.totalNominalOhms, 1);
+
+  const d4Series = computeElectricalLoad({
+    voiceCoilCount: 2,
+    coilNominalOhms: 4,
+    coilReOhms: 3.5,
+    baseLeMh: 2.1,
+    coilWiring: 'series',
+    driverCount: 1,
+    arrayWiring: 'parallel',
+  });
+  assert.equal(d4Series.totalNominalOhms, 8);
 });

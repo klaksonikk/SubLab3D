@@ -17,6 +17,7 @@
   "build": {
     "appId": "com.sublab3d.acoustic",
     "productName": "SubLab 3D",
+    "icon": "electron/icon.png",
     "directories": {
       "output": "release"
     },
@@ -25,13 +26,16 @@
       "electron/**/*"
     ],
     "win": {
-      "target": ["nsis", "portable"]
+      "target": ["nsis", "portable"],
+      "icon": "electron/icon.ico"
     },
     "linux": {
-      "target": ["AppImage"]
+      "target": ["AppImage"],
+      "icon": "electron/icon.png"
     },
     "mac": {
-      "target": ["dmg"]
+      "target": ["dmg"],
+      "icon": "electron/icon.png"
     }
   },
   "dependencies": {

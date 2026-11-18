@@ -5,6 +5,10 @@ const path = require('path');
 const isDevMode = process.argv.includes('--dev');
 
 function createMainWindow() {
+  const iconPath = path.join(
+    __dirname,
+    process.platform === 'win32' ? 'icon.ico' : 'icon.png',
+  );
   const mainWindow = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -12,6 +16,7 @@ function createMainWindow() {
     minHeight: 720,
     backgroundColor: '#0A0B0E',
     title: 'SubLab 3D — Projektant Obudów & WSD',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

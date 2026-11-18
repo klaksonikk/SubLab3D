@@ -523,8 +523,8 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
               </button>
             </div>
 
-            {/* Exploded View Slider */}
-            <div className="flex items-center gap-2.5 min-w-[180px]">
+            {/* Exploded View Slider (0-100%) */}
+            <div className="flex items-center gap-2">
               <Layers className="w-3.5 h-3.5 text-red-400 shrink-0" />
               <label htmlFor="explode-slider" className="text-xs text-zinc-300 whitespace-nowrap">
                 Rozstrzelenie
@@ -532,14 +532,15 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
               <input
                 id="explode-slider"
                 type="range"
+                aria-label="Rozstrzelenie modelu w procentach"
                 min={0}
-                max={1}
-                step={0.01}
-                value={explodeFactor}
-                onChange={(e) => setExplodeFactor(parseFloat(e.target.value))}
-                className="cad-slider w-24"
+                max={100}
+                step={1}
+                value={Math.round(explodeFactor * 100)}
+                onChange={(e) => setExplodeFactor(Number(e.target.value) / 100)}
+                className="w-24 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-red-500"
               />
-              <span className="font-mono-num text-xs text-zinc-300 w-9 text-right">
+              <span className="font-mono-num text-xs text-zinc-300 w-9 text-right tabular-nums">
                 {Math.round(explodeFactor * 100)}%
               </span>
             </div>

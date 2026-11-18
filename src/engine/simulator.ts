@@ -3,16 +3,24 @@ import { DRIVER_PRESETS } from './presets';
 import {
   AIR_DENSITY_DEFAULT,
   SPEED_OF_SOUND_DEFAULT,
+  computeElectricalLoad,
   solveThieleSmall,
   type TsSolverOutput,
 } from './tsSolver';
-import type { BoxParams, DriverPreset, EnclosureType } from './types';
+import type {
+  BoxParams,
+  CoilWiringMode,
+  DriverPreset,
+  DriverWiringType,
+  EnclosureType,
+  VoiceCoilCount,
+} from './types';
 
 export type FilterSlopeType = 'none' | 'bw12' | 'bw24' | 'lr24' | 'cheb12' | 'cheb24';
 
 export type AcousticEnvironment = 'free_4pi' | 'half_2pi' | 'quarter_pi' | 'cabin';
 
-export type DriverWiringType = 'parallel' | 'series';
+export type { DriverWiringType };
 
 export interface SignalChainConfig {
   powerW: number;
@@ -53,9 +61,13 @@ export interface ComparisonVariant {
   bandpassFrontRatio?: number;
   rearTuningHz?: number;
   rearPortAreaCm2?: number;
-  // Multi-driver, coil thermal & cone mass extensions
+  // Multi-driver, voice coil, thermal & cone mass extensions
   driverPresetId?: string;
   driverCount?: 1 | 2 | 3 | 4 | 5 | 6;
+  voiceCoilCount?: VoiceCoilCount;
+  coilNominalOhms?: number;
+  coilReOhms?: number;
+  coilWiring?: CoilWiringMode;
   wiring?: DriverWiringType;
   isobaric?: boolean;
   ql?: number; // Leakage loss Ql (default 7)
@@ -298,6 +310,8 @@ export function computeDerivedDriverMetrics(
   params: BoxParams,
   reOhms = 2.0,
   driverPreset?: DriverPreset,
+  coilWiringOverride?: CoilWiringMode,
+  arrayWiringOverride?: DriverWiringType,
 ): DerivedDriverMetrics {
   const cutoutDia = driverPreset?.cutoutDia ?? params.driverCutoutDia;
   const fs = driverPreset?.fs ?? params.driverFs;
@@ -311,11 +325,32 @@ export function computeDerivedDriverMetrics(
   const qes =
     driverPreset?.qes ?? Math.max(0.18, (qts * qms) / Math.max(0.4, qms - qts));
 
+  const voiceCoilCount: VoiceCoilCount =
+    driverPreset?.voiceCoilCount ?? params.driverVoiceCoilCount ?? 1;
+  const coilNominalOhms =
+    driverPreset?.coilNominalOhms ?? params.driverCoilNominalOhms ?? 4;
+  const coilReOhms =
+    driverPreset?.coilReOhms ??
+    params.driverCoilReOhms ??
+    (voiceCoilCount === 2 ? (driverPreset?.re ?? reOhms) / 2 : driverPreset?.re ?? reOhms);
+  const coilWiring: CoilWiringMode =
+    voiceCoilCount === 2
+      ? coilWiringOverride ??
+        (params.driverCoilWiring === 'series' ? 'series' : 'parallel')
+      : 'single';
+  const arrayWiring: DriverWiringType =
+    arrayWiringOverride ?? params.driverArrayWiring ?? 'parallel';
+  const baseLe = driverPreset?.le ?? params.driverCoilLeMh ?? 1.4;
+
   const solved = solveThieleSmall({
-    qSolveMode: driverPreset?.qes ? 'solve_qts' : 'solve_qts',
+    qSolveMode: 'solve_qts',
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+    coilWiring,
     fs: Math.max(15, fs),
     qes,
     qms,
@@ -326,7 +361,7 @@ export function computeDerivedDriverMetrics(
     sd,
     dd,
     re: driverPreset?.re ?? reOhms,
-    le: driverPreset?.le ?? 1.4,
+    le: baseLe,
     zNom: driverPreset?.zNom ?? 4,
     bl: driverPreset?.bl ?? 16,
     xmax,
@@ -334,8 +369,25 @@ export function computeDerivedDriverMetrics(
   });
 
   const count = params.driverCount;
+  const totalElec = computeElectricalLoad({
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+    baseLeMh: baseLe,
+    coilWiring,
+    driverCount: count,
+    arrayWiring,
+  });
+
   return {
     ...solved,
+    re: totalElec.totalReOhms,
+    le: totalElec.totalLeMh,
+    zNom: totalElec.totalNominalOhms,
+    spl283v1m:
+      solved.spl1w1m +
+      10 * Math.log10(Math.max(0.2, count)) +
+      10 * Math.log10(8 / Math.max(0.2, totalElec.totalReOhms)),
     sdCm2: solved.sd * count,
     vdCm3: solved.vd * count,
     ratedPowerTotalW: solved.powerW * count,
@@ -398,8 +450,11 @@ function resolveVariantDriver(
   powerOne: number;
   cutoutDia: number;
   sdOneCm2: number;
-  reOne: number;
-  leOneMh: number;
+  voiceCoilCount: VoiceCoilCount;
+  coilNominalOhms: number;
+  coilReOhms: number;
+  baseLeMh: number;
+  coilWiring: CoilWiringMode;
 } {
   const count = variant.driverCount ?? baseParams.driverCount;
   const targetId = variant.driverPresetId ?? baseParams.driverPresetId;
@@ -419,8 +474,33 @@ function resolveVariantDriver(
   const cutoutDia = isOverride && found ? found.cutoutDia : baseParams.driverCutoutDia;
   const sdOneCm2 =
     found?.sd ?? Math.PI * Math.pow((cutoutDia * 0.88) / 20, 2);
-  const reOne = isOverride && found?.re ? found.re : found?.re ?? signal.reOhms;
-  const leOneMh = isOverride && found?.le !== undefined ? found.le : found?.le ?? signal.leMh;
+
+  const voiceCoilCount: VoiceCoilCount =
+    variant.voiceCoilCount ??
+    (isOverride && found?.voiceCoilCount ? found.voiceCoilCount : baseParams.driverVoiceCoilCount) ??
+    1;
+  const coilNominalOhms =
+    variant.coilNominalOhms ??
+    (isOverride && found?.coilNominalOhms
+      ? found.coilNominalOhms
+      : baseParams.driverCoilNominalOhms) ??
+    4;
+  const coilReOhms =
+    variant.coilReOhms ??
+    (isOverride && found?.coilReOhms
+      ? found.coilReOhms
+      : baseParams.driverCoilReOhms) ??
+    signal.reOhms;
+  const baseLeMh =
+    isOverride && found?.le !== undefined
+      ? found.le
+      : baseParams.driverCoilLeMh ?? found?.le ?? signal.leMh;
+  const coilWiring: CoilWiringMode =
+    voiceCoilCount === 2
+      ? variant.coilWiring ??
+        (isOverride ? 'parallel' : baseParams.driverCoilWiring === 'series' ? 'series' : 'parallel')
+      : 'single';
+
   const name =
     isOverride && found
       ? found.name
@@ -438,8 +518,11 @@ function resolveVariantDriver(
     powerOne,
     cutoutDia,
     sdOneCm2,
-    reOne,
-    leOneMh,
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+    baseLeMh,
+    coilWiring,
   };
 }
 
@@ -523,24 +606,25 @@ export function simulateEnclosureSeries(
   const vb = Math.max(3, variant.netVolumeL * polyfillVolFactor);
   const alpha = vasTotal / vb;
 
-  // Wiring impedance scaling for multi-driver arrays + voice coil heating + series resistance Rg
-  const wiring = variant.wiring ?? 'parallel';
-  const rawRe = Math.max(0.35, drv.reOne * thermalFactor);
-  const wiredRe =
-    drv.count > 1
-      ? wiring === 'series'
-        ? rawRe * drv.count
-        : Math.max(0.3, rawRe / drv.count)
-      : rawRe;
+  // Wiring impedance scaling for coils (SVC/DVC parallel/series) + multi-driver array + thermal rise + series Rg
+  const arrayWiring = variant.wiring ?? params.driverArrayWiring ?? 'parallel';
+  const elecLoad = computeElectricalLoad({
+    voiceCoilCount: drv.voiceCoilCount,
+    coilNominalOhms: drv.coilNominalOhms,
+    coilReOhms: drv.coilReOhms * thermalFactor,
+    baseLeMh: drv.baseLeMh,
+    coilWiring: drv.coilWiring,
+    driverCount: drv.count,
+    arrayWiring,
+  });
+  const wiredRe = Math.max(0.25, elecLoad.totalReOhms);
   const rg = Math.max(0, signal.seriesResistanceOhms ?? 0);
   const reTotal = wiredRe + rg;
-  const leH =
-    (Math.max(0, drv.leOneMh) / 1000) *
-    (drv.count > 1 ? (wiring === 'series' ? drv.count : 1 / drv.count) : 1);
+  const leH = Math.max(0, elecLoad.totalLeMh) / 1000;
 
   // Heating increases Re -> increases Qes proportionally; series Rg also increases effective Qes
   const thermalQes = coldQes * thermalFactor;
-  const effectiveQes = thermalQes * (1 + rg / Math.max(0.3, wiredRe));
+  const effectiveQes = thermalQes * (1 + rg / Math.max(0.25, wiredRe));
   const qts = (effectiveQes * qms) / (effectiveQes + qms);
   const resOhms = wiredRe * (qms / effectiveQes);
 
@@ -870,7 +954,11 @@ export function createLiveProjectVariant(params: BoxParams): ComparisonVariant {
     rearPortAreaCm2: acoustics.rearPortAreaCm2 || undefined,
     driverPresetId: params.driverPresetId,
     driverCount: params.driverCount,
-    wiring: 'parallel',
+    voiceCoilCount: params.driverVoiceCoilCount,
+    coilNominalOhms: params.driverCoilNominalOhms,
+    coilReOhms: params.driverCoilReOhms,
+    coilWiring: params.driverCoilWiring,
+    wiring: params.driverArrayWiring,
     isobaric: false,
     ql: 7,
     qa: 100,

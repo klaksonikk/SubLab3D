@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Cpu, RotateCcw, Save, X } from 'lucide-react';
 import {
   buildCustomDriverPreset,
+  computeElectricalLoad,
   driverPresetToSolverInput,
   solveThieleSmall,
   type MechSolveMode,
@@ -10,14 +11,19 @@ import {
   type SdInputMode,
   type TsSolverInput,
 } from '../engine/tsSolver';
-import type { DriverPreset } from '../engine/types';
+import type { CoilWiringMode, DriverPreset, VoiceCoilCount } from '../engine/types';
+import { ImmediateNumberInput } from './ImmediateNumberInput';
 
 interface DriverTsModalProps {
   open: boolean;
   editingDriver: DriverPreset | null;
   initialTemplateDriver: DriverPreset;
   onClose: () => void;
-  onSaveDriver: (driver: DriverPreset, applyToProjectToo: boolean) => void;
+  onSaveDriver: (
+    driver: DriverPreset,
+    applyToProjectToo: boolean,
+    chosenCoilWiring: CoilWiringMode,
+  ) => void;
 }
 
 const SIZE_CAD_DEFAULTS: Record<
@@ -86,6 +92,25 @@ export function DriverTsModal({
   }, [open, editingDriver, initialTemplateDriver]);
 
   const solved = useMemo(() => solveThieleSmall(solverInput), [solverInput]);
+  const coilLoad = useMemo(
+    () =>
+      computeElectricalLoad({
+        voiceCoilCount: solverInput.voiceCoilCount,
+        coilNominalOhms: solverInput.coilNominalOhms,
+        coilReOhms: solverInput.coilReOhms,
+        baseLeMh: solverInput.le,
+        coilWiring: solverInput.coilWiring,
+        driverCount: 1,
+        arrayWiring: 'parallel',
+      }),
+    [
+      solverInput.voiceCoilCount,
+      solverInput.coilNominalOhms,
+      solverInput.coilReOhms,
+      solverInput.le,
+      solverInput.coilWiring,
+    ],
+  );
 
   if (!open) return null;
 
@@ -103,7 +128,6 @@ export function DriverTsModal({
   };
 
   const setAutoQ = (mode: QSolveMode) => {
-    // Sync current solved values so switching mode doesn't jump numerically
     setSolverInput((prev) => ({
       ...prev,
       qSolveMode: mode,
@@ -143,6 +167,14 @@ export function DriverTsModal({
     }));
   };
 
+  const handleVoiceCoilCountChange = (count: VoiceCoilCount) => {
+    setSolverInput((prev) => ({
+      ...prev,
+      voiceCoilCount: count,
+      coilWiring: count === 2 ? (prev.coilWiring === 'single' ? 'parallel' : prev.coilWiring) : 'single',
+    }));
+  };
+
   const handleSizePreset = (sz: string) => {
     setSizeLabel(sz);
     const cad = SIZE_CAD_DEFAULTS[sz];
@@ -168,13 +200,21 @@ export function DriverTsModal({
     const id =
       editingDriver?.id ??
       `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const preset = buildCustomDriverPreset(id, brand, model, sizeLabel, solved, {
-      cutoutDia,
-      outerDia,
-      depth,
-      displacement,
-    });
-    onSaveDriver(preset, applyToProjectToo);
+    const preset = buildCustomDriverPreset(
+      id,
+      brand,
+      model,
+      sizeLabel,
+      solved,
+      {
+        cutoutDia,
+        outerDia,
+        depth,
+        displacement,
+      },
+      solverInput.le,
+    );
+    onSaveDriver(preset, applyToProjectToo, coilLoad.effectiveCoilWiring);
     onClose();
   };
 
@@ -203,7 +243,7 @@ export function DriverTsModal({
                   : 'Nowy własny głośnik — Baza i kalkulator T-S'}
               </h2>
               <p className="text-[11px] text-zinc-400">
-                Wpisz dostępne parametry z noty katalogowej — brakujące wielkości wyliczają się automatycznie w czasie rzeczywistym.
+                Wpisz parametry z noty katalogowej — wszystkie wartości T-S oraz impedancja cewek wyliczają się na żywo.
               </p>
             </div>
           </div>
@@ -226,7 +266,7 @@ export function DriverTsModal({
               <span className="text-[11px] text-zinc-400 block">Marka (Brand)</span>
               <input
                 type="text"
-                placeholder="np. DD Audio / Sundown"
+                placeholder="np. Deaf Bonce / Sundown"
                 value={brand}
                 onChange={(e) => {
                   setBrand(e.target.value);
@@ -240,7 +280,7 @@ export function DriverTsModal({
               <span className="text-[11px] text-zinc-400 block">Model głośnika *</span>
               <input
                 type="text"
-                placeholder="np. 712f D2 / SA-12 Rev.3"
+                placeholder="np. Machete MF-12R / SA-12 Rev.3"
                 value={model}
                 onChange={(e) => {
                   setModel(e.target.value);
@@ -277,10 +317,10 @@ export function DriverTsModal({
 
           {/* T-S Auto-Calculation Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            {/* Column 1: Q-Triad & Electromechanical */}
+            {/* Column 1: Q-Triad & Voice Coil Spec */}
             <div className="lg:col-span-4 bg-[#161920] border border-white/[0.08] rounded-md p-3.5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white">Dobroć Q i Rezonans</span>
+                <span className="text-xs font-semibold text-white">Dobroć Q i Cewki</span>
                 <button
                   type="button"
                   onClick={() => setSolverInput(driverPresetToSolverInput(initialTemplateDriver))}
@@ -313,20 +353,14 @@ export function DriverTsModal({
                       {isQAuto('qes') ? 'AUTO' : 'Wyliczaj Qes'}
                     </button>
                   </div>
-                  <input
+                  <ImmediateNumberInput
                     id="ts-qes"
-                    type="number"
-                    step="any"
-                    min="0.08"
-                    max="2.5"
+                    min={0.08}
+                    max={2.5}
+                    decimals={3}
                     disabled={isQAuto('qes')}
-                    value={isQAuto('qes') ? solved.qes.toFixed(3) : solverInput.qes}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        qes: Math.max(0.08, Number(e.target.value) || 0.4),
-                      }))
-                    }
+                    value={isQAuto('qes') ? solved.qes : solverInput.qes}
+                    onChange={(qes) => setSolverInput((p) => ({ ...p, qes }))}
                     className={`w-full rounded px-2.5 py-1.5 text-xs font-mono-num focus:outline-none ${
                       isQAuto('qes')
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -353,20 +387,14 @@ export function DriverTsModal({
                       {isQAuto('qms') ? 'AUTO' : 'Wyliczaj Qms'}
                     </button>
                   </div>
-                  <input
+                  <ImmediateNumberInput
                     id="ts-qms"
-                    type="number"
-                    step="any"
-                    min="0.5"
-                    max="20"
+                    min={0.5}
+                    max={20}
+                    decimals={2}
                     disabled={isQAuto('qms')}
-                    value={isQAuto('qms') ? solved.qms.toFixed(2) : solverInput.qms}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        qms: Math.max(0.5, Number(e.target.value) || 4.5),
-                      }))
-                    }
+                    value={isQAuto('qms') ? solved.qms : solverInput.qms}
+                    onChange={(qms) => setSolverInput((p) => ({ ...p, qms }))}
                     className={`w-full rounded px-2.5 py-1.5 text-xs font-mono-num focus:outline-none ${
                       isQAuto('qms')
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -393,20 +421,14 @@ export function DriverTsModal({
                       {isQAuto('qts') ? 'AUTO' : 'Wyliczaj Qts'}
                     </button>
                   </div>
-                  <input
+                  <ImmediateNumberInput
                     id="ts-qts"
-                    type="number"
-                    step="any"
-                    min="0.08"
-                    max="2.0"
+                    min={0.08}
+                    max={2.0}
+                    decimals={3}
                     disabled={isQAuto('qts')}
-                    value={isQAuto('qts') ? solved.qts.toFixed(3) : solverInput.qts}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        qts: Math.max(0.08, Number(e.target.value) || 0.4),
-                      }))
-                    }
+                    value={isQAuto('qts') ? solved.qts : solverInput.qts}
+                    onChange={(qts) => setSolverInput((p) => ({ ...p, qts }))}
                     className={`w-full rounded px-2.5 py-1.5 text-xs font-mono-num focus:outline-none ${
                       isQAuto('qts')
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -417,58 +439,100 @@ export function DriverTsModal({
               </div>
 
               {/* Electrical Voice Coil Specs */}
-              <div className="pt-2 border-t border-white/[0.06] grid grid-cols-3 gap-2">
-                <label className="space-y-1">
-                  <span className="text-[11px] text-zinc-400 block">Re (Ω)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0.3"
-                    max="16"
-                    value={solverInput.re}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        re: Math.max(0.25, Number(e.target.value) || 2.0),
-                      }))
-                    }
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[11px] text-zinc-400 block">Le (mH)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="0"
-                    max="15"
-                    value={solverInput.le}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        le: Math.max(0, Number(e.target.value) || 0),
-                      }))
-                    }
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[11px] text-zinc-400 block">Z nom. (Ω)</span>
-                  <input
-                    type="number"
-                    step="any"
-                    min="1"
-                    max="16"
-                    value={solverInput.zNom}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        zNom: Math.max(1, Number(e.target.value) || 4),
-                      }))
-                    }
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
-                  />
-                </label>
+              <div className="pt-2.5 border-t border-white/[0.06] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-zinc-300">Ilość cewek</span>
+                  <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]">
+                    {([1, 2] as const).map((cnt) => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => handleVoiceCoilCountChange(cnt)}
+                        className={`px-2 py-0.5 text-[10px] font-mono-num rounded ${
+                          solverInput.voiceCoilCount === cnt
+                            ? 'bg-red-600 text-white font-semibold'
+                            : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {cnt === 1 ? '1× SVC' : '2× DVC'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {solverInput.voiceCoilCount === 2 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-zinc-300">Łączenie cewek</span>
+                    <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]">
+                      {(
+                        [
+                          { id: 'parallel', label: 'Równoległe' },
+                          { id: 'series', label: 'Szeregowe' },
+                        ] as const
+                      ).map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => setSolverInput((p) => ({ ...p, coilWiring: w.id }))}
+                          className={`px-2 py-0.5 text-[10px] rounded ${
+                            coilLoad.effectiveCoilWiring === w.id
+                              ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/40'
+                              : 'text-zinc-400 hover:text-white'
+                          }`}
+                        >
+                          {w.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-zinc-400 block">Z cewki (Ω)</span>
+                    <ImmediateNumberInput
+                      min={0.5}
+                      max={16}
+                      decimals={2}
+                      value={solverInput.coilNominalOhms}
+                      onChange={(coilNominalOhms) =>
+                        setSolverInput((p) => ({ ...p, coilNominalOhms }))
+                      }
+                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-zinc-400 block">Re cewki (Ω)</span>
+                    <ImmediateNumberInput
+                      min={0.2}
+                      max={16}
+                      decimals={2}
+                      value={solverInput.coilReOhms}
+                      onChange={(coilReOhms) => setSolverInput((p) => ({ ...p, coilReOhms }))}
+                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[10px] text-zinc-400 block">
+                      {solverInput.voiceCoilCount === 2 ? 'Le szer. (mH)' : 'Le (mH)'}
+                    </span>
+                    <ImmediateNumberInput
+                      min={0}
+                      max={20}
+                      decimals={2}
+                      value={solverInput.le}
+                      onChange={(le) => setSolverInput((p) => ({ ...p, le }))}
+                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="bg-[#08090C] border border-cyan-500/25 rounded px-2.5 py-1.5 flex items-center justify-between text-[11px] font-mono-num">
+                  <span className="text-zinc-400">Wypadkowo (1 szt.):</span>
+                  <strong className="text-cyan-300">
+                    {coilLoad.singleDriverNominalOhms.toFixed(1)} Ω · Re {coilLoad.singleDriverReOhms.toFixed(2)} Ω
+                  </strong>
+                </div>
               </div>
             </div>
 
@@ -508,17 +572,13 @@ export function DriverTsModal({
                     <span>Fs (Hz)</span>
                     {fsAuto && <span className="text-[9px] text-cyan-300 font-mono-num">AUTO</span>}
                   </span>
-                  <input
-                    type="number"
-                    step="any"
+                  <ImmediateNumberInput
+                    min={10}
+                    max={250}
+                    decimals={2}
                     disabled={fsAuto}
-                    value={fsAuto ? solved.fs.toFixed(1) : solverInput.fs}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        fs: Math.max(10, Number(e.target.value) || 30),
-                      }))
-                    }
+                    value={fsAuto ? solved.fs : solverInput.fs}
+                    onChange={(fs) => setSolverInput((p) => ({ ...p, fs }))}
                     className={`w-full rounded px-2 py-1.5 text-xs font-mono-num focus:outline-none ${
                       fsAuto
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -532,17 +592,13 @@ export function DriverTsModal({
                     <span>Vas (L)</span>
                     {vasAuto && <span className="text-[9px] text-cyan-300 font-mono-num">AUTO</span>}
                   </span>
-                  <input
-                    type="number"
-                    step="any"
+                  <ImmediateNumberInput
+                    min={1}
+                    max={1000}
+                    decimals={2}
                     disabled={vasAuto}
-                    value={vasAuto ? solved.vas.toFixed(1) : solverInput.vas}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        vas: Math.max(1, Number(e.target.value) || 40),
-                      }))
-                    }
+                    value={vasAuto ? solved.vas : solverInput.vas}
+                    onChange={(vas) => setSolverInput((p) => ({ ...p, vas }))}
                     className={`w-full rounded px-2 py-1.5 text-xs font-mono-num focus:outline-none ${
                       vasAuto
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -556,17 +612,13 @@ export function DriverTsModal({
                     <span>Mms (g)</span>
                     {mmsAuto && <span className="text-[9px] text-cyan-300 font-mono-num">AUTO</span>}
                   </span>
-                  <input
-                    type="number"
-                    step="any"
+                  <ImmediateNumberInput
+                    min={5}
+                    max={2000}
+                    decimals={1}
                     disabled={mmsAuto}
-                    value={mmsAuto ? solved.mms.toFixed(1) : solverInput.mms}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        mms: Math.max(5, Number(e.target.value) || 120),
-                      }))
-                    }
+                    value={mmsAuto ? solved.mms : solverInput.mms}
+                    onChange={(mms) => setSolverInput((p) => ({ ...p, mms }))}
                     className={`w-full rounded px-2 py-1.5 text-xs font-mono-num focus:outline-none ${
                       mmsAuto
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -580,17 +632,13 @@ export function DriverTsModal({
                     <span>Cms (mm/N)</span>
                     {cmsAuto && <span className="text-[9px] text-cyan-300 font-mono-num">AUTO</span>}
                   </span>
-                  <input
-                    type="number"
-                    step="any"
+                  <ImmediateNumberInput
+                    min={0.01}
+                    max={10}
+                    decimals={3}
                     disabled={cmsAuto}
-                    value={cmsAuto ? solved.cms.toFixed(3) : solverInput.cms}
-                    onChange={(e) =>
-                      setSolverInput((p) => ({
-                        ...p,
-                        cms: Math.max(0.01, Number(e.target.value) || 0.2),
-                      }))
-                    }
+                    value={cmsAuto ? solved.cms : solverInput.cms}
+                    onChange={(cms) => setSolverInput((p) => ({ ...p, cms }))}
                     className={`w-full rounded px-2 py-1.5 text-xs font-mono-num focus:outline-none ${
                       cmsAuto
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -635,22 +683,20 @@ export function DriverTsModal({
                     <span className="text-[11px] text-zinc-400 block">
                       {solverInput.sdInputMode === 'direct_sd' ? 'Sd (cm²)' : 'Dd efekt. (mm)'}
                     </span>
-                    <input
-                      type="number"
-                      step="any"
+                    <ImmediateNumberInput
+                      min={solverInput.sdInputMode === 'direct_sd' ? 15 : 40}
+                      max={3000}
+                      decimals={1}
                       value={
                         solverInput.sdInputMode === 'direct_sd'
                           ? solverInput.sd
                           : solverInput.dd
                       }
-                      onChange={(e) => {
-                        const val = Number(e.target.value) || 200;
+                      onChange={(val) =>
                         setSolverInput((p) =>
-                          p.sdInputMode === 'direct_sd'
-                            ? { ...p, sd: Math.max(15, val) }
-                            : { ...p, dd: Math.max(40, val) },
-                        );
-                      }}
+                          p.sdInputMode === 'direct_sd' ? { ...p, sd: val } : { ...p, dd: val },
+                        )
+                      }
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
@@ -672,17 +718,13 @@ export function DriverTsModal({
                         {blAuto ? 'AUTO' : 'Z Bl→Qes'}
                       </button>
                     </span>
-                    <input
-                      type="number"
-                      step="any"
+                    <ImmediateNumberInput
+                      min={1}
+                      max={100}
+                      decimals={2}
                       disabled={blAuto}
-                      value={blAuto ? solved.bl.toFixed(2) : solverInput.bl}
-                      onChange={(e) =>
-                        setSolverInput((p) => ({
-                          ...p,
-                          bl: Math.max(1, Number(e.target.value) || 12),
-                        }))
-                      }
+                      value={blAuto ? solved.bl : solverInput.bl}
+                      onChange={(bl) => setSolverInput((p) => ({ ...p, bl }))}
                       className={`w-full rounded px-2 py-1 text-xs font-mono-num focus:outline-none ${
                         blAuto
                           ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -694,7 +736,7 @@ export function DriverTsModal({
               </div>
             </div>
 
-            {/* Column 3: Limits, Live WinISD Calculated Output & 3D Mounting */}
+            {/* Column 3: Limits, Live Calculated Output & 3D Mounting */}
             <div className="lg:col-span-4 space-y-3">
               {/* Limits & 3D Mounting */}
               <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3.5 space-y-2.5">
@@ -704,85 +746,67 @@ export function DriverTsModal({
                 <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Xmax (mm)</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="1"
-                      max="60"
+                    <ImmediateNumberInput
+                      min={1}
+                      max={80}
+                      decimals={1}
                       value={solverInput.xmax}
-                      onChange={(e) =>
-                        setSolverInput((p) => ({
-                          ...p,
-                          xmax: Math.max(1, Number(e.target.value) || 12),
-                        }))
-                      }
+                      onChange={(xmax) => setSolverInput((p) => ({ ...p, xmax }))}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Moc Pe RMS (W)</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="25"
-                      max="10000"
+                    <ImmediateNumberInput
+                      min={25}
+                      max={15000}
+                      decimals={0}
                       value={solverInput.powerW}
-                      onChange={(e) =>
-                        setSolverInput((p) => ({
-                          ...p,
-                          powerW: Math.max(25, Number(e.target.value) || 500),
-                        }))
-                      }
+                      onChange={(powerW) => setSolverInput((p) => ({ ...p, powerW }))}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Otwór CAD (mm)</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="100"
-                      max="480"
+                    <ImmediateNumberInput
+                      min={80}
+                      max={500}
+                      decimals={0}
                       value={cutoutDia}
-                      onChange={(e) => setCutoutDia(Math.max(100, Number(e.target.value) || 280))}
+                      onChange={setCutoutDia}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Kosz zewn. (mm)</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="120"
-                      max="520"
+                    <ImmediateNumberInput
+                      min={100}
+                      max={560}
+                      decimals={0}
                       value={outerDia}
-                      onChange={(e) => setOuterDia(Math.max(120, Number(e.target.value) || 316))}
+                      onChange={setOuterDia}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Głębokość (mm)</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="60"
-                      max="360"
+                    <ImmediateNumberInput
+                      min={50}
+                      max={400}
+                      decimals={0}
                       value={depth}
-                      onChange={(e) => setDepth(Math.max(60, Number(e.target.value) || 160))}
+                      onChange={setDepth}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Wyporność (L)</span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.3"
-                      max="15"
+                    <ImmediateNumberInput
+                      min={0.2}
+                      max={20}
+                      decimals={2}
                       value={displacement}
-                      onChange={(e) =>
-                        setDisplacement(Math.max(0.3, Number(e.target.value) || 2.5))
-                      }
+                      onChange={setDisplacement}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
@@ -793,7 +817,7 @@ export function DriverTsModal({
               <div className="bg-[#08090C] border border-cyan-500/30 rounded-md p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-cyan-300">
-                    Wyliczone automatycznie (T-S)
+                    Podgląd wyliczonych parametrów (T-S)
                   </span>
                   {solved.isValid ? (
                     <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400">

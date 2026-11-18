@@ -23,6 +23,12 @@ export type PortControlMode = 'dimensions' | 'tuning' | 'area_from_length';
 
 export type BoxAutoCalcField = 'none' | 'depth' | 'width' | 'height';
 
+export type VoiceCoilCount = 1 | 2;
+
+export type CoilWiringMode = 'single' | 'parallel' | 'series';
+
+export type DriverWiringType = 'parallel' | 'series' | 'series_parallel';
+
 export interface BoxParams {
   enclosureType: EnclosureType;
   joineryType: JoineryType;
@@ -61,6 +67,14 @@ export interface BoxParams {
   driverVas: number; // liters
   driverXmax: number; // mm (one-way)
   driverPowerW: number; // W RMS per driver
+
+  // Voice coil & multi-driver electrical configuration
+  driverVoiceCoilCount: VoiceCoilCount;
+  driverCoilNominalOhms: number; // nominal impedance per single coil (Ohm)
+  driverCoilReOhms: number; // DC resistance Re per single coil (Ohm)
+  driverCoilLeMh: number; // reference Le (series for DVC, single for SVC) (mH)
+  driverCoilWiring: CoilWiringMode;
+  driverArrayWiring: DriverWiringType;
 
   // Port control mode ('dimensions' = manual W/D/L, 'tuning' = target Fb + Area -> auto W/D & L)
   portControlMode: PortControlMode;
@@ -231,6 +245,7 @@ export interface DriverPreset {
   id: string;
   name: string;
   sizeLabel: string;
+  source?: string;
   isCustom?: boolean;
   cutoutDia: number;
   outerDia: number;
@@ -241,12 +256,16 @@ export interface DriverPreset {
   vas: number;
   xmax: number;
   powerW: number;
-  // Full Thiele-Small parameters (WinISD-compatible)
+  // Voice coil physical specs
+  voiceCoilCount?: VoiceCoilCount;
+  coilNominalOhms?: number; // nominal Ohm per single coil
+  coilReOhms?: number; // DC Re Ohm per single coil
+  // Full Thiele-Small parameters
   qes?: number;
   qms?: number;
-  re?: number; // Ohm
-  le?: number; // mH
-  zNom?: number; // Ohm
+  re?: number; // Reference DC Ohm (series for DVC, single for SVC)
+  le?: number; // Reference Le mH (series for DVC, single for SVC)
+  zNom?: number; // Reference nominal Ohm
   sd?: number; // cm^2
   bl?: number; // T*m
   mms?: number; // g

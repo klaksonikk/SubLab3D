@@ -1,4 +1,5 @@
 import type { BoxParams, CutSheetSummary } from '../engine/types';
+import { ImmediateNumberInput } from './ImmediateNumberInput';
 
 interface SheetNestingViewProps {
   params: BoxParams;
@@ -55,14 +56,13 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
             <label htmlFor="saw-kerf" className="text-xs text-zinc-400 whitespace-nowrap">
               Rzaz piły:
             </label>
-            <input
+            <ImmediateNumberInput
               id="saw-kerf"
-              type="number"
+              value={params.sawKerf}
               min={0}
               max={10}
-              step={0.5}
-              value={params.sawKerf}
-              onChange={(e) => onChange({ sawKerf: Math.max(0, Number(e.target.value) || 0) })}
+              decimals={1}
+              onChange={(sawKerf) => onChange({ sawKerf })}
               className="w-12 bg-transparent text-right font-mono-num text-xs text-white focus:outline-none"
             />
             <span className="text-[11px] text-zinc-500">mm</span>

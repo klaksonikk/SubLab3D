@@ -1,4 +1,9 @@
-import type { DriverPreset } from './types';
+import type {
+  CoilWiringMode,
+  DriverPreset,
+  DriverWiringType,
+  VoiceCoilCount,
+} from './types';
 
 export const AIR_DENSITY_DEFAULT = 1.204; // kg/m^3 at 20°C
 export const SPEED_OF_SOUND_DEFAULT = 343.2; // m/s at 20°C
@@ -8,11 +13,126 @@ export type MechSolveMode = 'from_fs_vas' | 'from_mms_cms' | 'from_fs_mms';
 export type MotorSolveMode = 'solve_bl' | 'solve_qes_from_bl';
 export type SdInputMode = 'direct_sd' | 'from_dd';
 
+export interface ElectricalWiringConfig {
+  voiceCoilCount: VoiceCoilCount;
+  coilNominalOhms: number;
+  coilReOhms: number;
+  baseLeMh: number; // for DVC, series Le reference (mH); for SVC, single coil Le (mH)
+  coilWiring: CoilWiringMode;
+  driverCount: number;
+  arrayWiring: DriverWiringType;
+}
+
+export interface ElectricalLoadResult {
+  voiceCoilCount: VoiceCoilCount;
+  effectiveCoilWiring: CoilWiringMode;
+  singleDriverNominalOhms: number;
+  singleDriverReOhms: number;
+  singleDriverLeMh: number;
+  totalNominalOhms: number;
+  totalReOhms: number;
+  totalLeMh: number;
+  arrayMultiplier: number;
+  wiringSummaryLabel: string;
+}
+
+/**
+ * Converts a dBFS level (0 dBFS = digital full scale -> gain 1.0, down to -60 dBFS)
+ * into linear Web Audio GainNode gain [0.0 .. 1.0].
+ */
+export function dbfsToLinearGain(dbfs: number): number {
+  if (!Number.isFinite(dbfs)) return 1;
+  const clamped = Math.max(-60, Math.min(0, dbfs));
+  return Math.min(1, Math.max(0, Math.pow(10, clamped / 20)));
+}
+
+/**
+ * Computes resultant electrical impedance (Z_nom, DC Re, inductance Le) from
+ * voice coil count (1x SVC / 2x DVC), per-coil resistance, coil wiring, and multi-driver array wiring.
+ */
+export function computeElectricalLoad(cfg: ElectricalWiringConfig): ElectricalLoadResult {
+  const voiceCoilCount: VoiceCoilCount = cfg.voiceCoilCount === 2 ? 2 : 1;
+  const safeCoilNom = Math.max(0.5, cfg.coilNominalOhms || 4);
+  const safeCoilRe = Math.max(0.2, cfg.coilReOhms || safeCoilNom * 0.8);
+  const safeBaseLe = Math.max(0, cfg.baseLeMh || 0);
+  const count = Math.max(1, Math.min(6, Math.round(cfg.driverCount || 1)));
+
+  let effectiveCoilWiring: CoilWiringMode = 'single';
+  let singleDriverNominalOhms = safeCoilNom;
+  let singleDriverReOhms = safeCoilRe;
+  let singleDriverLeMh = safeBaseLe;
+
+  if (voiceCoilCount === 2) {
+    effectiveCoilWiring = cfg.coilWiring === 'series' ? 'series' : 'parallel';
+    if (effectiveCoilWiring === 'parallel') {
+      singleDriverNominalOhms = safeCoilNom / 2;
+      singleDriverReOhms = safeCoilRe / 2;
+      singleDriverLeMh = safeBaseLe / 4;
+    } else {
+      singleDriverNominalOhms = safeCoilNom * 2;
+      singleDriverReOhms = safeCoilRe * 2;
+      singleDriverLeMh = safeBaseLe;
+    }
+  }
+
+  let arrayMultiplier = 1;
+  let arrayTag = '';
+  if (count > 1) {
+    if (cfg.arrayWiring === 'series') {
+      arrayMultiplier = count;
+      arrayTag = `szeregowo (${count}S)`;
+    } else if (cfg.arrayWiring === 'series_parallel') {
+      if (count === 4) {
+        arrayMultiplier = 1; // 2S2P
+        arrayTag = '2S2P';
+      } else if (count === 6) {
+        arrayMultiplier = 2 / 3; // 2S3P
+        arrayTag = '2S3P';
+      } else {
+        arrayMultiplier = 1 / count;
+        arrayTag = `równolegle (${count}P)`;
+      }
+    } else {
+      arrayMultiplier = 1 / count;
+      arrayTag = `równolegle (${count}P)`;
+    }
+  }
+
+  const totalNominalOhms = singleDriverNominalOhms * arrayMultiplier;
+  const totalReOhms = singleDriverReOhms * arrayMultiplier;
+  const totalLeMh = singleDriverLeMh * arrayMultiplier;
+
+  const coilTag =
+    voiceCoilCount === 2
+      ? `2×${safeCoilNom}Ω ${effectiveCoilWiring === 'parallel' ? 'równol.' : 'szereg.'}`
+      : `1×${safeCoilNom}Ω`;
+  const wiringSummaryLabel =
+    count > 1 ? `${count} szt. (${coilTag}) + ${arrayTag}` : `${coilTag}`;
+
+  return {
+    voiceCoilCount,
+    effectiveCoilWiring,
+    singleDriverNominalOhms,
+    singleDriverReOhms,
+    singleDriverLeMh,
+    totalNominalOhms,
+    totalReOhms,
+    totalLeMh,
+    arrayMultiplier,
+    wiringSummaryLabel,
+  };
+}
+
 export interface TsSolverInput {
   qSolveMode: QSolveMode;
   mechSolveMode: MechSolveMode;
   motorSolveMode: MotorSolveMode;
   sdInputMode: SdInputMode;
+
+  voiceCoilCount: VoiceCoilCount;
+  coilNominalOhms: number;
+  coilReOhms: number;
+  coilWiring: CoilWiringMode;
 
   fs: number; // Hz
   qes: number;
@@ -23,9 +143,9 @@ export interface TsSolverInput {
   cms: number; // mm/N
   sd: number; // cm^2
   dd: number; // effective piston diameter (mm)
-  re: number; // Ohm
-  le: number; // mH
-  zNom: number; // Ohm
+  re: number; // Effective Ohm (kept synced from coil config or manual override)
+  le: number; // mH (reference series/single coil Le)
+  zNom: number; // Effective nominal Ohm
   bl: number; // T*m
   xmax: number; // mm
   powerW: number; // W RMS
@@ -49,9 +169,13 @@ export interface TsSolverOutput {
   rms: number; // kg/s
   sd: number; // cm^2
   dd: number; // mm
-  re: number; // Ohm
-  le: number; // mH
-  zNom: number; // Ohm
+  re: number; // Effective DC Ohm for current coil wiring
+  le: number; // Effective Le mH for current coil wiring
+  zNom: number; // Effective nominal Ohm for current coil wiring
+  voiceCoilCount: VoiceCoilCount;
+  coilNominalOhms: number;
+  coilReOhms: number;
+  coilWiring: CoilWiringMode;
   bl: number; // T*m
   xmax: number; // mm
   powerW: number; // W
@@ -72,9 +196,25 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
   const c = Math.max(300, input.speedOfSoundMs ?? SPEED_OF_SOUND_DEFAULT);
   const rhoC2 = rho * c * c;
 
-  const re = Math.max(0.25, input.re || 2.0);
-  const le = Math.max(0, input.le || 0);
-  const zNom = Math.max(1, input.zNom || 4);
+  const voiceCoilCount: VoiceCoilCount = input.voiceCoilCount === 2 ? 2 : 1;
+  const coilNominalOhms = Math.max(0.5, input.coilNominalOhms || 4);
+  const coilReOhms = Math.max(0.2, input.coilReOhms || coilNominalOhms * 0.8);
+  const coilWiring: CoilWiringMode =
+    voiceCoilCount === 2 ? (input.coilWiring === 'series' ? 'series' : 'parallel') : 'single';
+
+  const elec = computeElectricalLoad({
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+    baseLeMh: input.le ?? 1.4,
+    coilWiring,
+    driverCount: 1,
+    arrayWiring: 'parallel',
+  });
+
+  const re = Math.max(0.2, elec.singleDriverReOhms || input.re || 2.0);
+  const le = Math.max(0, elec.singleDriverLeMh);
+  const zNom = Math.max(0.5, elec.singleDriverNominalOhms || input.zNom || 4);
   const xmax = Math.max(0.5, input.xmax || 12);
   const powerW = Math.max(10, input.powerW || 400);
 
@@ -107,10 +247,9 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
     cmsMperN = 1 / (Math.pow(2 * Math.PI * fs, 2) * mmsKg);
     vasL = rhoC2 * sdM2 * sdM2 * cmsMperN * 1000;
   } else {
-    // Standard datasheet mode: Fs + Vas + Sd -> Cms & Mms
     fs = Math.max(10, input.fs || 30);
     vasL = Math.max(1, input.vas || 40);
-    cmsMperN = (vasL / 1000) / (rhoC2 * sdM2 * sdM2);
+    cmsMperN = vasL / 1000 / (rhoC2 * sdM2 * sdM2);
     mmsKg = 1 / (Math.pow(2 * Math.PI * fs, 2) * cmsMperN);
   }
 
@@ -127,7 +266,8 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
       if (qts >= qes) {
         warnings.push({
           field: 'qts',
-          message: 'Qts musi być mniejsze niż wyliczone Qes (z Bl), aby istniało dodatnie Qms.',
+          message:
+            'Qts musi być mniejsze niż wyliczone Qes (z Bl), aby istniało dodatnie Qms.',
         });
         qms = Math.max(1.5, qes * 8);
         qts = (qes * qms) / (qes + qms);
@@ -142,7 +282,8 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
       if (qts >= qms) {
         warnings.push({
           field: 'qts',
-          message: 'Nieprawidłowa zależność: Qts musi być mniejsze niż Qms (1/Qts = 1/Qes + 1/Qms).',
+          message:
+            'Nieprawidłowa zależność: Qts musi być mniejsze niż Qms (1/Qts = 1/Qes + 1/Qms).',
         });
         qes = Math.max(0.15, qts * 1.1);
       } else {
@@ -152,7 +293,8 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
       if (qts >= qes) {
         warnings.push({
           field: 'qts',
-          message: 'Nieprawidłowa zależność: Qts musi być mniejsze niż Qes (1/Qts = 1/Qes + 1/Qms).',
+          message:
+            'Nieprawidłowa zależność: Qts musi być mniejsze niż Qes (1/Qts = 1/Qes + 1/Qms).',
         });
         qms = Math.max(1.5, qes * 8);
       } else {
@@ -210,6 +352,10 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
     re,
     le,
     zNom,
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+    coilWiring,
     bl,
     xmax,
     powerW,
@@ -231,6 +377,9 @@ export function driverPresetToSolverInput(drv: {
   vas: number;
   xmax: number;
   powerW: number;
+  voiceCoilCount?: VoiceCoilCount;
+  coilNominalOhms?: number;
+  coilReOhms?: number;
   qes?: number;
   qms?: number;
   re?: number;
@@ -241,6 +390,14 @@ export function driverPresetToSolverInput(drv: {
   mms?: number;
   cms?: number;
 }): TsSolverInput {
+  const voiceCoilCount: VoiceCoilCount = drv.voiceCoilCount === 2 ? 2 : 1;
+  const coilNominalOhms =
+    drv.coilNominalOhms ?? (voiceCoilCount === 2 ? (drv.zNom ?? 4) / 2 : drv.zNom ?? 4);
+  const coilReOhms =
+    drv.coilReOhms ??
+    (voiceCoilCount === 2 ? (drv.re ?? coilNominalOhms * 1.6) / 2 : drv.re ?? 3.2);
+  const coilWiring: CoilWiringMode = voiceCoilCount === 2 ? 'series' : 'single';
+
   const qms = drv.qms ?? 4.8;
   const qts = Math.max(0.15, drv.qts);
   const qes = drv.qes ?? Math.max(0.18, (qts * qms) / Math.max(0.4, qms - qts));
@@ -252,6 +409,10 @@ export function driverPresetToSolverInput(drv: {
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+    coilWiring,
     fs: drv.fs,
     qes,
     qms,
@@ -261,9 +422,9 @@ export function driverPresetToSolverInput(drv: {
     cms: drv.cms ?? 0.2,
     sd,
     dd,
-    re: drv.re ?? 2.0,
+    re: drv.re ?? (voiceCoilCount === 2 ? coilReOhms * 2 : coilReOhms),
     le: drv.le ?? 1.4,
-    zNom: drv.zNom ?? 4,
+    zNom: drv.zNom ?? (voiceCoilCount === 2 ? coilNominalOhms * 2 : coilNominalOhms),
     bl: drv.bl ?? 16,
     xmax: drv.xmax,
     powerW: drv.powerW,
@@ -274,6 +435,10 @@ export function driverPresetToSolverInput(drv: {
     mechSolveMode: 'from_fs_vas',
     motorSolveMode: 'solve_bl',
     sdInputMode: 'direct_sd',
+    voiceCoilCount,
+    coilNominalOhms: Number(coilNominalOhms.toFixed(2)),
+    coilReOhms: Number(coilReOhms.toFixed(2)),
+    coilWiring,
     fs: drv.fs,
     qes: Number(qes.toFixed(3)),
     qms: Number(qms.toFixed(2)),
@@ -283,9 +448,9 @@ export function driverPresetToSolverInput(drv: {
     cms: Number(initial.cms.toFixed(3)),
     sd: Number(sd.toFixed(1)),
     dd: Number(initial.dd.toFixed(0)),
-    re: drv.re ?? 2.0,
+    re: Number(initial.re.toFixed(2)),
     le: drv.le ?? 1.4,
-    zNom: drv.zNom ?? 4,
+    zNom: Number(initial.zNom.toFixed(1)),
     bl: Number(initial.bl.toFixed(2)),
     xmax: drv.xmax,
     powerW: drv.powerW,
@@ -304,19 +469,34 @@ export function buildCustomDriverPreset(
     depth: number;
     displacement: number;
   },
+  referenceSeriesLeMh?: number,
 ): DriverPreset {
   const cleanBrand = brand.trim();
   const cleanModel = model.trim();
   const fullName = cleanBrand ? `${cleanBrand} ${cleanModel}` : cleanModel;
+  const seriesRefRe =
+    solved.voiceCoilCount === 2 ? solved.coilReOhms * 2 : solved.coilReOhms;
+  const seriesRefZ =
+    solved.voiceCoilCount === 2 ? solved.coilNominalOhms * 2 : solved.coilNominalOhms;
+  const seriesRefLe =
+    referenceSeriesLeMh ??
+    (solved.voiceCoilCount === 2 && solved.coilWiring === 'parallel'
+      ? solved.le * 4
+      : solved.le);
+
   return {
     id,
     name: fullName,
     sizeLabel: sizeLabel.trim() || '12"',
+    source: 'Własny T-S',
     isCustom: true,
     cutoutDia: mounting.cutoutDia,
     outerDia: mounting.outerDia,
     depth: mounting.depth,
     displacement: mounting.displacement,
+    voiceCoilCount: solved.voiceCoilCount,
+    coilNominalOhms: Number(solved.coilNominalOhms.toFixed(2)),
+    coilReOhms: Number(solved.coilReOhms.toFixed(2)),
     fs: Number(solved.fs.toFixed(2)),
     qts: Number(solved.qts.toFixed(3)),
     vas: Number(solved.vas.toFixed(2)),
@@ -324,9 +504,9 @@ export function buildCustomDriverPreset(
     powerW: Math.round(solved.powerW),
     qes: Number(solved.qes.toFixed(3)),
     qms: Number(solved.qms.toFixed(2)),
-    re: Number(solved.re.toFixed(2)),
-    le: Number(solved.le.toFixed(2)),
-    zNom: Number(solved.zNom.toFixed(1)),
+    re: Number(seriesRefRe.toFixed(2)),
+    le: Number(seriesRefLe.toFixed(2)),
+    zNom: Number(seriesRefZ.toFixed(1)),
     sd: Number(solved.sd.toFixed(1)),
     bl: Number(solved.bl.toFixed(2)),
     mms: Number(solved.mms.toFixed(1)),

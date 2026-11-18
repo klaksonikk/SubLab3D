@@ -3,7 +3,7 @@ import {
   Activity,
   ArrowRight,
   Copy,
-  Cpu,
+  Database,
   Download,
   Edit3,
   Eye,
@@ -11,12 +11,14 @@ import {
   Gauge,
   Plus,
   RotateCcw,
+  Search,
   Sliders,
   Sparkles,
   Trash2,
   Upload,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react';
 import {
   computeDerivedDriverMetrics,
@@ -33,8 +35,20 @@ import {
   type SimulatedSeries,
 } from '../engine/simulator';
 import { DRIVER_PRESETS } from '../engine/presets';
-import type { BoxParams, DriverPreset, EnclosureType } from '../engine/types';
-import { DriverTsModal } from './DriverTsModal';
+import {
+  computeElectricalLoad,
+  dbfsToLinearGain,
+  driverPresetToSolverInput,
+  solveThieleSmall,
+} from '../engine/tsSolver';
+import type {
+  BoxParams,
+  CoilWiringMode,
+  DriverPreset,
+  EnclosureType,
+  VoiceCoilCount,
+} from '../engine/types';
+import { ImmediateNumberInput } from './ImmediateNumberInput';
 
 export type WorkbenchPlotMode =
   | 'transferBox'
@@ -68,11 +82,18 @@ interface AcousticWorkbenchProps {
   params: BoxParams;
   customDrivers?: DriverPreset[];
   onApplyParams: (patch: Partial<BoxParams>) => void;
-  onSaveCustomDriver?: (driver: DriverPreset, applyToProjectToo?: boolean) => void;
+  onSaveCustomDriver?: (
+    driver: DriverPreset,
+    applyToProjectToo?: boolean,
+    coilWiring?: CoilWiringMode,
+  ) => void;
   onDeleteCustomDriver?: (driverId: string) => void;
+  onOpenDriverModal?: (editTarget: DriverPreset | null, template?: DriverPreset) => void;
   onImportDrivers?: (drivers: DriverPreset[]) => void;
 }
 
+const WSD_VARIANTS_STORAGE_KEY = 'subbox_cad_wsd_variants_v1';
+const WSD_SIGNAL_STORAGE_KEY = 'subbox_cad_wsd_signal_v1';
 const VARIANT_PALETTE = ['#38bdf8', '#10b981', '#f59e0b', '#a78bfa'];
 
 const PLOT_MODES: Array<{
@@ -135,6 +156,37 @@ const ENCLOSURE_LABELS: Array<{ id: EnclosureType; label: string }> = [
   { id: 'bandpass_6th', label: 'Bandpass 6-rz.' },
 ];
 
+const GEN_FREQ_PRESETS = [20, 25, 30, 35, 40, 45, 50];
+const GEN_DBFS_PRESETS = [0, -3, -6, -12, -20, -30];
+
+function presetToBoxAndCoilPatch(drv: DriverPreset): Partial<BoxParams> {
+  const voiceCoilCount: VoiceCoilCount = drv.voiceCoilCount === 2 ? 2 : 1;
+  const coilNominalOhms =
+    drv.coilNominalOhms ?? (voiceCoilCount === 2 ? (drv.zNom ?? 4) / 2 : drv.zNom ?? 4);
+  const coilReOhms =
+    drv.coilReOhms ??
+    (voiceCoilCount === 2 ? (drv.re ?? coilNominalOhms * 1.6) / 2 : drv.re ?? 3.2);
+  const coilWiring: CoilWiringMode = voiceCoilCount === 2 ? 'series' : 'single';
+  return {
+    driverPresetId: drv.id,
+    driverName: drv.name,
+    driverCutoutDia: drv.cutoutDia,
+    driverOuterDia: drv.outerDia,
+    driverDepth: drv.depth,
+    driverDisplacement: drv.displacement,
+    driverFs: drv.fs,
+    driverQts: drv.qts,
+    driverVas: drv.vas,
+    driverXmax: drv.xmax,
+    driverPowerW: drv.powerW,
+    driverVoiceCoilCount: voiceCoilCount,
+    driverCoilNominalOhms: coilNominalOhms,
+    driverCoilReOhms: coilReOhms,
+    driverCoilLeMh: drv.le ?? 1.4,
+    driverCoilWiring: coilWiring,
+  };
+}
+
 function getPointValue(pt: SimCurvePoint, mode: WorkbenchPlotMode): number {
   switch (mode) {
     case 'transfer':
@@ -174,115 +226,54 @@ function getPointValue(pt: SimCurvePoint, mode: WorkbenchPlotMode): number {
   }
 }
 
-export function AcousticWorkbench({
-  params,
-  customDrivers = [],
-  onApplyParams,
-  onSaveCustomDriver,
-  onDeleteCustomDriver,
-  onImportDrivers,
-}: AcousticWorkbenchProps) {
-  const [plotMode, setPlotMode] = useState<WorkbenchPlotMode>('transfer');
-  const [maxFreqHz, setMaxFreqHz] = useState<200 | 500>(200);
-  const [activeProjectTab, setActiveProjectTab] = useState<ProjectEditorTab>('driver');
-  const [selectedVariantId, setSelectedVariantId] = useState<string>('live-project');
-  const [showPhaseOverlay, setShowPhaseOverlay] = useState(true);
-  const [hoverHz, setHoverHz] = useState<number | null>(null);
-  const [liveVisible, setLiveVisible] = useState(true);
-  const [liveOverrides, setLiveOverrides] = useState<{
-    wiring: DriverWiringType;
-    isobaric: boolean;
-    ql: number;
-    qa: number;
-    voiceCoilTempRiseC: number;
-    voiceCoilTempCoeff: number;
-    addedMassG: number;
-    portEndFlared?: boolean;
-  }>({
-    wiring: 'parallel',
-    isobaric: false,
-    ql: 7,
-    qa: 100,
-    voiceCoilTempRiseC: 0,
-    voiceCoilTempCoeff: 3.9,
-    addedMassG: 0,
-  });
-
-  // Custom Driver Editor Modal state
-  const [driverModalOpen, setDriverModalOpen] = useState(false);
-  const [editingDriver, setEditingDriver] = useState<DriverPreset | null>(null);
-
-  // Offline Signal Tone Generator (Web Audio API)
-  const [genEnabled, setGenEnabled] = useState(false);
-  const [genHz, setGenHz] = useState(40);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const oscRef = useRef<OscillatorNode | null>(null);
-  const gainRef = useRef<GainNode | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!genEnabled) {
-      if (oscRef.current) {
-        try {
-          oscRef.current.stop();
-          oscRef.current.disconnect();
-        } catch {
-          // ignore
-        }
-        oscRef.current = null;
+function loadSavedVariants(params: BoxParams, knownDrivers: DriverPreset[]): ComparisonVariant[] {
+  const knownIds = new Set(knownDrivers.map((d) => d.id));
+  try {
+    const raw = window.localStorage.getItem(WSD_VARIANTS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ComparisonVariant[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.slice(0, 3).map((v) => ({
+          ...v,
+          driverPresetId:
+            v.driverPresetId && knownIds.has(v.driverPresetId)
+              ? v.driverPresetId
+              : DRIVER_PRESETS[0].id,
+        }));
       }
-      return;
     }
-    const AudioCtx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return;
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new AudioCtx();
-    }
-    const ctx = audioCtxRef.current;
-    if (ctx.state === 'suspended') {
-      void ctx.resume();
-    }
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(Math.max(12, Math.min(500, genHz)), ctx.currentTime);
-    g.gain.setValueAtTime(0.05, ctx.currentTime);
-    osc.connect(g);
-    g.connect(ctx.destination);
-    osc.start();
-    oscRef.current = osc;
-    gainRef.current = g;
+  } catch {
+    // Ignore malformed storage
+  }
+  return [
+    {
+      id: 'cmp-sealed-ref',
+      name: 'Wariant B: Zamknięta referencyjna',
+      color: VARIANT_PALETTE[0],
+      visible: true,
+      enclosureType: 'sealed',
+      netVolumeL: Math.max(15, Math.round(params.driverVas * params.driverCount * 0.65)),
+      tuningHz: 35,
+      portAreaCm2: 0,
+      driverPresetId: params.driverPresetId,
+      driverCount: params.driverCount,
+      voiceCoilCount: params.driverVoiceCoilCount,
+      coilNominalOhms: params.driverCoilNominalOhms,
+      coilReOhms: params.driverCoilReOhms,
+      coilWiring: params.driverCoilWiring,
+      wiring: params.driverArrayWiring,
+      isobaric: false,
+      ql: 7,
+      qa: 18,
+      voiceCoilTempRiseC: 0,
+      voiceCoilTempCoeff: 3.9,
+      addedMassG: 0,
+    },
+  ];
+}
 
-    return () => {
-      try {
-        osc.stop();
-        osc.disconnect();
-      } catch {
-        // ignore
-      }
-      oscRef.current = null;
-    };
-  }, [genEnabled]);
-
-  useEffect(() => {
-    if (oscRef.current && audioCtxRef.current) {
-      oscRef.current.frequency.setValueAtTime(
-        Math.max(12, Math.min(500, genHz)),
-        audioCtxRef.current.currentTime,
-      );
-    }
-  }, [genHz]);
-
-  const allDrivers = useMemo(
-    () => [...DRIVER_PRESETS, ...customDrivers],
-    [customDrivers],
-  );
-
-  const defaultPower = params.driverPowerW * params.driverCount;
-  const [powerInput, setPowerInput] = useState<string>(String(defaultPower));
-  const [signal, setSignal] = useState<SignalChainConfig>({
+function loadSavedSignal(defaultPower: number): SignalChainConfig {
+  const defaults: SignalChainConfig = {
     powerW: defaultPower,
     reOhms: 2.0,
     leMh: 1.4,
@@ -304,35 +295,159 @@ export function AcousticWorkbench({
     ltQp: 0.707,
     airDensityKgM3: 1.204,
     speedOfSoundMs: 343.2,
+  };
+  try {
+    const raw = window.localStorage.getItem(WSD_SIGNAL_STORAGE_KEY);
+    if (!raw) return defaults;
+    return { ...defaults, ...(JSON.parse(raw) as Partial<SignalChainConfig>) };
+  } catch {
+    return defaults;
+  }
+}
+
+export function AcousticWorkbench({
+  params,
+  customDrivers = [],
+  onApplyParams,
+  onDeleteCustomDriver,
+  onOpenDriverModal,
+  onImportDrivers,
+}: AcousticWorkbenchProps) {
+  const [plotMode, setPlotMode] = useState<WorkbenchPlotMode>('transfer');
+  const [maxFreqHz, setMaxFreqHz] = useState<200 | 500>(200);
+  const [activeProjectTab, setActiveProjectTab] = useState<ProjectEditorTab>('driver');
+  const [selectedVariantId, setSelectedVariantId] = useState<string>('live-project');
+  const [showPhaseOverlay, setShowPhaseOverlay] = useState(true);
+  const [hoverHz, setHoverHz] = useState<number | null>(null);
+  const [liveVisible, setLiveVisible] = useState(true);
+  const [liveOverrides, setLiveOverrides] = useState<{
+    isobaric: boolean;
+    ql: number;
+    qa: number;
+    voiceCoilTempRiseC: number;
+    voiceCoilTempCoeff: number;
+    addedMassG: number;
+    portEndFlared?: boolean;
+  }>({
+    isobaric: false,
+    ql: 7,
+    qa: 100,
+    voiceCoilTempRiseC: 0,
+    voiceCoilTempCoeff: 3.9,
+    addedMassG: 0,
   });
 
+  // Offline Sine Signal Generator (0 dBFS down to -60 dBFS, Web Audio API)
+  const [genEnabled, setGenEnabled] = useState(false);
+  const [genHz, setGenHz] = useState(35);
+  const [genLevelDbfs, setGenLevelDbfs] = useState(0);
+  const [driverCatalogOpen, setDriverCatalogOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogSizeFilter, setCatalogSizeFilter] = useState<'all' | '8"' | '10"' | '12"' | '15"' | '18"'>('all');
+  const [catalogDriverId, setCatalogDriverId] = useState<string>(() => params.driverPresetId);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const oscRef = useRef<OscillatorNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   useEffect(() => {
-    const target = params.driverPowerW * params.driverCount;
-    setSignal((prev) => ({ ...prev, powerW: target }));
-    setPowerInput(String(target));
+    if (!genEnabled) {
+      if (oscRef.current) {
+        try {
+          oscRef.current.stop();
+          oscRef.current.disconnect();
+        } catch {
+          // ignore
+        }
+        oscRef.current = null;
+      }
+      gainRef.current = null;
+      return;
+    }
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioCtx();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(Math.max(12, Math.min(500, genHz)), ctx.currentTime);
+    g.gain.setValueAtTime(dbfsToLinearGain(genLevelDbfs), ctx.currentTime);
+    osc.connect(g);
+    g.connect(ctx.destination);
+    osc.start();
+    oscRef.current = osc;
+    gainRef.current = g;
+
+    return () => {
+      try {
+        osc.stop();
+        osc.disconnect();
+      } catch {
+        // ignore
+      }
+      oscRef.current = null;
+      gainRef.current = null;
+    };
+  }, [genEnabled]);
+
+  useEffect(() => {
+    if (oscRef.current && audioCtxRef.current) {
+      oscRef.current.frequency.setValueAtTime(
+        Math.max(12, Math.min(500, genHz)),
+        audioCtxRef.current.currentTime,
+      );
+    }
+  }, [genHz]);
+
+  useEffect(() => {
+    if (gainRef.current && audioCtxRef.current) {
+      gainRef.current.gain.setTargetAtTime(
+        dbfsToLinearGain(genLevelDbfs),
+        audioCtxRef.current.currentTime,
+        0.015,
+      );
+    }
+  }, [genLevelDbfs]);
+
+  const allDrivers = useMemo(
+    () => [...DRIVER_PRESETS, ...customDrivers],
+    [customDrivers],
+  );
+
+  const defaultPower = params.driverPowerW * params.driverCount;
+  const [signal, setSignal] = useState<SignalChainConfig>(() => loadSavedSignal(defaultPower));
+
+  useEffect(() => {
+    setSignal((prev) => ({ ...prev, powerW: params.driverPowerW * params.driverCount }));
   }, [params.driverPowerW, params.driverCount]);
 
-  const [customVariants, setCustomVariants] = useState<ComparisonVariant[]>(() => [
-    {
-      id: 'cmp-sealed-ref',
-      name: 'Wariant B: Zamknięta referencyjna',
-      color: VARIANT_PALETTE[0],
-      visible: true,
-      enclosureType: 'sealed',
-      netVolumeL: Math.max(15, Math.round(params.driverVas * params.driverCount * 0.65)),
-      tuningHz: 35,
-      portAreaCm2: 0,
-      driverPresetId: params.driverPresetId,
-      driverCount: params.driverCount,
-      wiring: 'parallel',
-      isobaric: false,
-      ql: 7,
-      qa: 18,
-      voiceCoilTempRiseC: 0,
-      voiceCoilTempCoeff: 3.9,
-      addedMassG: 0,
-    },
-  ]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WSD_SIGNAL_STORAGE_KEY, JSON.stringify(signal));
+    } catch {
+      // ignore
+    }
+  }, [signal]);
+
+  const [customVariants, setCustomVariants] = useState<ComparisonVariant[]>(() =>
+    loadSavedVariants(params, allDrivers),
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WSD_VARIANTS_STORAGE_KEY, JSON.stringify(customVariants));
+    } catch {
+      // ignore
+    }
+  }, [customVariants]);
 
   const liveVariant = useMemo<ComparisonVariant>(
     () => ({
@@ -368,41 +483,141 @@ export function AcousticWorkbench({
 
   const inspectedDriverPreset = useMemo(() => {
     const targetId = selectedVariant.driverPresetId ?? params.driverPresetId;
-    return allDrivers.find((d) => d.id === targetId);
+    return allDrivers.find((d) => d.id === targetId) ?? DRIVER_PRESETS[0];
   }, [allDrivers, selectedVariant.driverPresetId, params.driverPresetId]);
 
+  const openDriverCatalog = (targetId?: string) => {
+    setCatalogDriverId(targetId ?? inspectedDriverPreset.id);
+    setDriverCatalogOpen(true);
+  };
+
+  const filteredCatalogDrivers = useMemo(() => {
+    const q = catalogQuery.trim().toLowerCase();
+    return allDrivers.filter((d) => {
+      if (catalogSizeFilter !== 'all' && !d.sizeLabel.includes(catalogSizeFilter)) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        d.name.toLowerCase().includes(q) ||
+        (d.source ?? '').toLowerCase().includes(q) ||
+        d.sizeLabel.toLowerCase().includes(q)
+      );
+    });
+  }, [allDrivers, catalogQuery, catalogSizeFilter]);
+
+  const selectedCatalogDriver = useMemo(
+    () =>
+      allDrivers.find((d) => d.id === catalogDriverId) ??
+      filteredCatalogDrivers[0] ??
+      inspectedDriverPreset,
+    [allDrivers, catalogDriverId, filteredCatalogDrivers, inspectedDriverPreset],
+  );
+
+  const solvedCatalogDriver = useMemo(
+    () => solveThieleSmall(driverPresetToSolverInput(selectedCatalogDriver)),
+    [selectedCatalogDriver],
+  );
+
+  const selectedElecLoad = useMemo(() => {
+    const isLiveSameDriver =
+      selectedVariant.isLiveProject || selectedVariant.driverPresetId === params.driverPresetId;
+    const vcCount: VoiceCoilCount =
+      selectedVariant.voiceCoilCount ??
+      (isLiveSameDriver ? params.driverVoiceCoilCount : inspectedDriverPreset.voiceCoilCount) ??
+      1;
+    const coilZ =
+      selectedVariant.coilNominalOhms ??
+      (isLiveSameDriver ? params.driverCoilNominalOhms : inspectedDriverPreset.coilNominalOhms) ??
+      4;
+    const coilRe =
+      selectedVariant.coilReOhms ??
+      (isLiveSameDriver ? params.driverCoilReOhms : inspectedDriverPreset.coilReOhms) ??
+      3.2;
+    const baseLe =
+      (isLiveSameDriver ? params.driverCoilLeMh : inspectedDriverPreset.le) ??
+      inspectedDriverPreset.le ??
+      1.4;
+    const coilWiring: CoilWiringMode =
+      vcCount === 2
+        ? (selectedVariant.coilWiring ??
+            (isLiveSameDriver ? params.driverCoilWiring : 'parallel')) === 'series'
+          ? 'series'
+          : 'parallel'
+        : 'single';
+    const drvCount = selectedVariant.driverCount ?? params.driverCount;
+    const arrayWiring: DriverWiringType =
+      selectedVariant.wiring ?? (selectedVariant.isLiveProject ? params.driverArrayWiring : 'parallel');
+
+    return computeElectricalLoad({
+      voiceCoilCount: vcCount,
+      coilNominalOhms: coilZ,
+      coilReOhms: coilRe,
+      baseLeMh: baseLe,
+      coilWiring,
+      driverCount: drvCount,
+      arrayWiring,
+    });
+  }, [selectedVariant, params, inspectedDriverPreset]);
+
   const derivedDriver = useMemo(() => {
-    const syntheticParams: BoxParams = inspectedDriverPreset
-      ? {
-          ...params,
-          driverCount: selectedVariant.driverCount ?? params.driverCount,
-          driverCutoutDia: inspectedDriverPreset.cutoutDia,
-          driverFs: inspectedDriverPreset.fs,
-          driverQts: inspectedDriverPreset.qts,
-          driverVas: inspectedDriverPreset.vas,
-          driverXmax: inspectedDriverPreset.xmax,
-          driverPowerW: inspectedDriverPreset.powerW,
-        }
-      : params;
+    const isLive = selectedVariant.isLiveProject;
+    const syntheticParams: BoxParams = {
+      ...params,
+      driverCount: selectedVariant.driverCount ?? params.driverCount,
+      driverCutoutDia: isLive ? params.driverCutoutDia : inspectedDriverPreset.cutoutDia,
+      driverFs: isLive ? params.driverFs : inspectedDriverPreset.fs,
+      driverQts: isLive ? params.driverQts : inspectedDriverPreset.qts,
+      driverVas: isLive ? params.driverVas : inspectedDriverPreset.vas,
+      driverXmax: isLive ? params.driverXmax : inspectedDriverPreset.xmax,
+      driverPowerW: isLive ? params.driverPowerW : inspectedDriverPreset.powerW,
+      driverVoiceCoilCount: selectedElecLoad.voiceCoilCount,
+      driverCoilNominalOhms:
+        selectedVariant.coilNominalOhms ??
+        (isLive ? params.driverCoilNominalOhms : inspectedDriverPreset.coilNominalOhms) ??
+        4,
+      driverCoilReOhms:
+        selectedVariant.coilReOhms ??
+        (isLive ? params.driverCoilReOhms : inspectedDriverPreset.coilReOhms) ??
+        3.2,
+      driverCoilLeMh:
+        (isLive ? params.driverCoilLeMh : inspectedDriverPreset.le) ?? 1.4,
+      driverCoilWiring: selectedElecLoad.effectiveCoilWiring,
+      driverArrayWiring: selectedVariant.wiring ?? params.driverArrayWiring,
+    };
+    const mergedPreset: DriverPreset = {
+      ...inspectedDriverPreset,
+      cutoutDia: syntheticParams.driverCutoutDia,
+      fs: syntheticParams.driverFs,
+      qts: syntheticParams.driverQts,
+      vas: syntheticParams.driverVas,
+      xmax: syntheticParams.driverXmax,
+      powerW: syntheticParams.driverPowerW,
+      voiceCoilCount: syntheticParams.driverVoiceCoilCount,
+      coilNominalOhms: syntheticParams.driverCoilNominalOhms,
+      coilReOhms: syntheticParams.driverCoilReOhms,
+      le: syntheticParams.driverCoilLeMh,
+    };
     return computeDerivedDriverMetrics(
       syntheticParams,
-      inspectedDriverPreset?.re ?? signal.reOhms,
-      inspectedDriverPreset,
+      selectedElecLoad.totalReOhms,
+      mergedPreset,
+      selectedElecLoad.effectiveCoilWiring,
+      selectedVariant.wiring ?? params.driverArrayWiring,
     );
-  }, [params, inspectedDriverPreset, selectedVariant.driverCount, signal.reOhms]);
+  }, [params, inspectedDriverPreset, selectedVariant, selectedElecLoad]);
 
   const alignments = useMemo(() => {
-    const alignParams: BoxParams = inspectedDriverPreset
-      ? {
-          ...params,
-          driverCount: selectedVariant.driverCount ?? params.driverCount,
-          driverFs: inspectedDriverPreset.fs,
-          driverQts: inspectedDriverPreset.qts,
-          driverVas: inspectedDriverPreset.vas,
-        }
-      : params;
+    const isLive = selectedVariant.isLiveProject;
+    const alignParams: BoxParams = {
+      ...params,
+      driverCount: selectedVariant.driverCount ?? params.driverCount,
+      driverFs: isLive ? params.driverFs : inspectedDriverPreset.fs,
+      driverQts: isLive ? params.driverQts : inspectedDriverPreset.qts,
+      driverVas: isLive ? params.driverVas : inspectedDriverPreset.vas,
+    };
     return computeDriverAlignments(alignParams);
-  }, [params, inspectedDriverPreset, selectedVariant.driverCount]);
+  }, [params, inspectedDriverPreset, selectedVariant]);
 
   const addCustomVariant = (preset?: Partial<ComparisonVariant>) => {
     if (customVariants.length >= 3) return;
@@ -426,7 +641,11 @@ export function AcousticWorkbench({
           preset?.portAreaCm2 ?? Math.max(100, Math.round(liveVariant.portAreaCm2 || 180)),
         driverPresetId: preset?.driverPresetId ?? params.driverPresetId,
         driverCount: preset?.driverCount ?? params.driverCount,
-        wiring: preset?.wiring ?? 'parallel',
+        voiceCoilCount: preset?.voiceCoilCount ?? params.driverVoiceCoilCount,
+        coilNominalOhms: preset?.coilNominalOhms ?? params.driverCoilNominalOhms,
+        coilReOhms: preset?.coilReOhms ?? params.driverCoilReOhms,
+        coilWiring: preset?.coilWiring ?? params.driverCoilWiring,
+        wiring: preset?.wiring ?? params.driverArrayWiring,
         isobaric: preset?.isobaric ?? false,
         ql: preset?.ql ?? 7,
         qa: preset?.qa ?? 100,
@@ -448,6 +667,10 @@ export function AcousticWorkbench({
       portAreaCm2: v.portAreaCm2,
       driverPresetId: v.driverPresetId,
       driverCount: v.driverCount,
+      voiceCoilCount: v.voiceCoilCount,
+      coilNominalOhms: v.coilNominalOhms,
+      coilReOhms: v.coilReOhms,
+      coilWiring: v.coilWiring,
       wiring: v.wiring,
       isobaric: v.isobaric,
       ql: v.ql,
@@ -460,7 +683,6 @@ export function AcousticWorkbench({
 
   const updateSelectedVariant = (patch: Partial<ComparisonVariant>) => {
     if (selectedVariant.isLiveProject) {
-      // Map live project changes to BoxParams where applicable + liveOverrides
       const boxPatch: Partial<BoxParams> = {};
       if (patch.enclosureType) boxPatch.enclosureType = patch.enclosureType;
       if (patch.portShape === 'round' && selectedVariant.enclosureType === 'vented_slot') {
@@ -480,18 +702,31 @@ export function AcousticWorkbench({
       if (patch.driverPresetId) {
         const drv = allDrivers.find((d) => d.id === patch.driverPresetId);
         if (drv) {
-          boxPatch.driverPresetId = drv.id;
-          boxPatch.driverName = drv.name;
-          boxPatch.driverCutoutDia = drv.cutoutDia;
-          boxPatch.driverOuterDia = drv.outerDia;
-          boxPatch.driverDepth = drv.depth;
-          boxPatch.driverDisplacement = drv.displacement;
-          boxPatch.driverFs = drv.fs;
-          boxPatch.driverQts = drv.qts;
-          boxPatch.driverVas = drv.vas;
-          boxPatch.driverXmax = drv.xmax;
-          boxPatch.driverPowerW = drv.powerW;
+          Object.assign(boxPatch, presetToBoxAndCoilPatch(drv));
         }
+      }
+      if (patch.voiceCoilCount !== undefined) {
+        boxPatch.driverVoiceCoilCount = patch.voiceCoilCount;
+        if (patch.coilWiring === undefined) {
+          boxPatch.driverCoilWiring =
+            patch.voiceCoilCount === 2
+              ? params.driverCoilWiring === 'series'
+                ? 'series'
+                : 'parallel'
+              : 'single';
+        }
+      }
+      if (patch.coilNominalOhms !== undefined) {
+        boxPatch.driverCoilNominalOhms = patch.coilNominalOhms;
+      }
+      if (patch.coilReOhms !== undefined) {
+        boxPatch.driverCoilReOhms = patch.coilReOhms;
+      }
+      if (patch.coilWiring !== undefined) {
+        boxPatch.driverCoilWiring = patch.coilWiring;
+      }
+      if (patch.wiring !== undefined) {
+        boxPatch.driverArrayWiring = patch.wiring;
       }
       if (patch.netVolumeL !== undefined) {
         boxPatch.boxAutoCalcField = 'depth';
@@ -522,7 +757,6 @@ export function AcousticWorkbench({
       }
 
       setLiveOverrides((prev) => ({
-        wiring: patch.wiring ?? prev.wiring,
         isobaric: patch.isobaric ?? prev.isobaric,
         ql: patch.ql ?? prev.ql,
         qa: patch.qa ?? prev.qa,
@@ -533,7 +767,24 @@ export function AcousticWorkbench({
       }));
     } else {
       setCustomVariants((prev) =>
-        prev.map((v) => (v.id === selectedVariant.id ? { ...v, ...patch } : v)),
+        prev.map((v) => {
+          if (v.id !== selectedVariant.id) return v;
+          const next = { ...v, ...patch };
+          if (patch.driverPresetId) {
+            const drv = allDrivers.find((d) => d.id === patch.driverPresetId);
+            if (drv) {
+              const vc: VoiceCoilCount = drv.voiceCoilCount === 2 ? 2 : 1;
+              next.voiceCoilCount = vc;
+              next.coilNominalOhms =
+                drv.coilNominalOhms ?? (vc === 2 ? (drv.zNom ?? 4) / 2 : drv.zNom ?? 4);
+              next.coilReOhms =
+                drv.coilReOhms ??
+                (vc === 2 ? (drv.re ?? next.coilNominalOhms * 1.6) / 2 : drv.re ?? 3.2);
+              next.coilWiring = vc === 2 ? 'series' : 'single';
+            }
+          }
+          return next;
+        }),
       );
     }
   };
@@ -545,13 +796,6 @@ export function AcousticWorkbench({
     }
   };
 
-  const handleSaveDriverFromModal = (driver: DriverPreset, applyToProjectToo: boolean) => {
-    onSaveCustomDriver?.(driver, applyToProjectToo);
-    if (!selectedVariant.isLiveProject) {
-      updateSelectedVariant({ driverPresetId: driver.id });
-    }
-  };
-
   const applyVariantTo3DProject = (v: ComparisonVariant) => {
     const drv = allDrivers.find((d) => d.id === v.driverPresetId);
     const patch: Partial<BoxParams> = {
@@ -559,20 +803,15 @@ export function AcousticWorkbench({
       boxAutoCalcField: 'depth',
       targetNetVolumeL: v.netVolumeL,
       driverCount: v.driverCount ?? params.driverCount,
+      driverArrayWiring: v.wiring ?? params.driverArrayWiring,
     };
     if (drv) {
-      patch.driverPresetId = drv.id;
-      patch.driverName = drv.name;
-      patch.driverCutoutDia = drv.cutoutDia;
-      patch.driverOuterDia = drv.outerDia;
-      patch.driverDepth = drv.depth;
-      patch.driverDisplacement = drv.displacement;
-      patch.driverFs = drv.fs;
-      patch.driverQts = drv.qts;
-      patch.driverVas = drv.vas;
-      patch.driverXmax = drv.xmax;
-      patch.driverPowerW = drv.powerW;
+      Object.assign(patch, presetToBoxAndCoilPatch(drv));
     }
+    if (v.voiceCoilCount !== undefined) patch.driverVoiceCoilCount = v.voiceCoilCount;
+    if (v.coilNominalOhms !== undefined) patch.driverCoilNominalOhms = v.coilNominalOhms;
+    if (v.coilReOhms !== undefined) patch.driverCoilReOhms = v.coilReOhms;
+    if (v.coilWiring !== undefined) patch.driverCoilWiring = v.coilWiring;
     if (v.enclosureType !== 'sealed') {
       patch.portControlMode = 'tuning';
       patch.targetTuningHz = v.tuningHz;
@@ -779,6 +1018,7 @@ export function AcousticWorkbench({
       : null;
 
   const selectedSeries = seriesList.find((s) => s.variantId === selectedVariant.id);
+  const activeDriverCountForUi = selectedVariant.driverCount ?? params.driverCount;
 
   return (
     <div className="flex-1 overflow-y-auto cad-scroll p-4 sm:p-5 space-y-4">
@@ -791,19 +1031,26 @@ export function AcousticWorkbench({
               WSD — Laboratorium T-S i Analiza Obudów
             </h2>
             <p className="text-[11px] text-zinc-400">
-              Własne głośniki T-S · Kompresja termiczna &amp; masa membrany · 17 krzywych analitycznych · Tryb offline
+              Deaf Bonce MF-12R D2 + własne T-S · Sync 3D ↔ WSD · Generator 0 dBFS · Tryb offline
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-testid="wsd-open-driver-catalog"
+            onClick={() => openDriverCatalog(inspectedDriverPreset.id)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-[#161920] border border-cyan-500/35 text-cyan-300 hover:bg-cyan-500/10 transition-colors"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Parametry głośników</span>
+          </button>
+
           {/* Add Custom Driver button right in WSD */}
           <button
             type="button"
-            onClick={() => {
-              setEditingDriver(null);
-              setDriverModalOpen(true);
-            }}
+            onClick={() => onOpenDriverModal?.(null, inspectedDriverPreset)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-red-600 text-white hover:bg-red-500 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -863,9 +1110,9 @@ export function AcousticWorkbench({
 
       {/* Main Split: Projects & Generator Rail + Graph */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-        {/* Left: Projects Checklist + Signal Generator */}
+        {/* Left: Projects Checklist + 0 dBFS Sine Signal Generator */}
         <div className="xl:col-span-4 space-y-4">
-          {/* Projects Checklist (like WinISD Projects box) */}
+          {/* Projects Checklist */}
           <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-3.5 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-white">
@@ -970,9 +1217,12 @@ export function AcousticWorkbench({
             </div>
           </div>
 
-          {/* Offline Tone Signal Generator (from image_98cbc20a.png) */}
-          <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
+          {/* Offline 0 dBFS Sine Signal Generator */}
+          <div
+            data-testid="wsd-signal-generator"
+            className="bg-[#111318] border border-white/[0.08] rounded-lg p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-semibold text-white flex items-center gap-1.5">
                 {genEnabled ? (
                   <Volume2 className="w-3.5 h-3.5 text-red-400" />
@@ -981,14 +1231,16 @@ export function AcousticWorkbench({
                 )}
                 <span>Generator sygnału testowego</span>
               </span>
-              <span className="text-[10px] font-mono-num text-zinc-500">Sinus Offline</span>
+              <span className="text-[10px] font-mono-num text-cyan-300">
+                Sinus {genLevelDbfs === 0 ? '0 dBFS (Full)' : `${genLevelDbfs} dBFS`}
+              </span>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setGenEnabled((g) => !g)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded border transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded border transition-colors shrink-0 ${
                   genEnabled
                     ? 'bg-red-600 border-red-500 text-white'
                     : 'bg-[#08090C] border-white/[0.1] text-zinc-300 hover:text-white'
@@ -997,43 +1249,78 @@ export function AcousticWorkbench({
                 {genEnabled ? 'Stop' : 'Generuj'}
               </button>
 
-              <div className="flex-1 flex items-center gap-1.5">
-                <input
-                  type="number"
-                  min={15}
+              <div className="flex-1 flex items-center gap-1">
+                <ImmediateNumberInput
+                  min={12}
                   max={500}
-                  step={1}
+                  decimals={1}
                   aria-label="Częstotliwość generatora (Hz)"
                   value={genHz}
-                  onChange={(e) => setGenHz(Math.max(15, Math.min(500, Number(e.target.value) || 40)))}
-                  className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
+                  onChange={setGenHz}
+                  className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs font-mono-num text-white text-right focus:outline-none focus:border-red-500"
                 />
-                <span className="text-xs text-zinc-400 font-mono-num">Hz</span>
+                <span className="text-[11px] text-zinc-400 font-mono-num shrink-0">Hz</span>
+              </div>
+
+              <div className="w-24 flex items-center gap-1">
+                <ImmediateNumberInput
+                  min={-60}
+                  max={0}
+                  decimals={1}
+                  aria-label="Poziom wyjściowy generatora (dBFS)"
+                  value={genLevelDbfs}
+                  onChange={setGenLevelDbfs}
+                  className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs font-mono-num text-cyan-300 text-right focus:outline-none focus:border-red-500"
+                />
+                <span className="text-[10px] text-zinc-400 font-mono-num shrink-0">dBFS</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-1">
-              {[25, 35, 45, 60].map((hz) => (
-                <button
-                  key={hz}
-                  type="button"
-                  onClick={() => setGenHz(hz)}
-                  className={`py-1 text-[10px] font-mono-num rounded border ${
-                    genHz === hz
-                      ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 font-semibold'
-                      : 'bg-[#08090C] border-white/[0.06] text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  {hz} Hz
-                </button>
-              ))}
+            <div className="space-y-1">
+              <span className="text-[10px] text-zinc-400 block">Poziom wyjściowy (dBFS)</span>
+              <div className="grid grid-cols-6 gap-1">
+                {GEN_DBFS_PRESETS.map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => setGenLevelDbfs(lvl)}
+                    className={`py-1 text-[10px] font-mono-num rounded border transition-colors ${
+                      genLevelDbfs === lvl
+                        ? 'bg-red-600/25 border-red-500 text-red-200 font-semibold'
+                        : 'bg-[#08090C] border-white/[0.06] text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {lvl} dB
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] text-zinc-400 block">Częstotliwości testowe (Hz)</span>
+              <div className="grid grid-cols-7 gap-1">
+                {GEN_FREQ_PRESETS.map((hz) => (
+                  <button
+                    key={hz}
+                    type="button"
+                    onClick={() => setGenHz(hz)}
+                    className={`py-1 text-[10px] font-mono-num rounded border transition-colors ${
+                      genHz === hz
+                        ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 font-semibold'
+                        : 'bg-[#08090C] border-white/[0.06] text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {hz}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Right: Graph Mode Selector + SVG Plot */}
         <div className="xl:col-span-8 bg-[#111318] border border-white/[0.08] rounded-lg p-4 space-y-3">
-          {/* Graph selector: full 17-mode WinISD dropdown + quick tabs */}
+          {/* Graph selector: 17 analytical modes */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 flex-1 min-w-[260px]">
               <label htmlFor="wsd-plot-select" className="text-xs text-zinc-400 whitespace-nowrap">
@@ -1343,13 +1630,13 @@ export function AcousticWorkbench({
                 })}
             </div>
             <span className="text-[11px] text-zinc-500 font-mono-num">
-              Moc: {signal.powerW} W · Rg {signal.seriesResistanceOhms ?? 0} Ω · 10–{maxFreqHz} Hz
+              Moc: {signal.powerW} W · Rg {signal.seriesResistanceOhms ?? 0} Ω · Z {selectedElecLoad.totalNominalOhms.toFixed(1)} Ω · 10–{maxFreqHz} Hz
             </span>
           </div>
         </div>
       </div>
 
-      {/* WinISD-Style Bottom Project Tabbed Inspector */}
+      {/* Bottom Project Tabbed Inspector */}
       <div className="bg-[#111318] border border-white/[0.08] rounded-lg overflow-hidden">
         <div className="px-4 py-2.5 bg-[#0D0F14] border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -1379,7 +1666,7 @@ export function AcousticWorkbench({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12">
-          {/* Vertical WinISD Tabs */}
+          {/* Vertical Tabs */}
           <div
             className="lg:col-span-2 bg-[#08090C] border-b lg:border-b-0 lg:border-r border-white/[0.08] p-2 flex lg:flex-col gap-1 overflow-x-auto"
             role="tablist"
@@ -1407,7 +1694,7 @@ export function AcousticWorkbench({
           <div className="lg:col-span-10 p-4">
             {activeProjectTab === 'driver' && (
               <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
-                {/* Left: Driver Database Selection, Count, Iso-Barik & Wiring */}
+                {/* Left: Driver Database Selection, Count, Iso-Barik, Voice Coils & Wiring */}
                 <div className="xl:col-span-7 space-y-3.5">
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="flex-1 min-w-[220px] space-y-1">
@@ -1419,18 +1706,18 @@ export function AcousticWorkbench({
                         onChange={(e) => updateSelectedVariant({ driverPresetId: e.target.value })}
                         className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
                       >
-                        <optgroup label="Baza fabryczna">
+                        <optgroup label="Domyślny głośnik (Deaf Bonce)">
                           {DRIVER_PRESETS.map((d) => (
                             <option key={d.id} value={d.id}>
-                              {d.name}
+                              {d.name} ({d.voiceCoilCount === 2 ? `DVC ${d.coilNominalOhms}Ω` : `SVC ${d.coilNominalOhms}Ω`})
                             </option>
                           ))}
                         </optgroup>
                         {customDrivers.length > 0 && (
-                          <optgroup label="Własne głośniki T-S">
+                          <optgroup label="Własne głośniki T-S (sync 3D)">
                             {customDrivers.map((d) => (
                               <option key={d.id} value={d.id}>
-                                {d.name} ({d.sizeLabel})
+                                {d.name} ({d.sizeLabel} · {d.voiceCoilCount === 2 ? `2×${d.coilNominalOhms ?? 2}Ω` : `1×${d.coilNominalOhms ?? 4}Ω`})
                               </option>
                             ))}
                           </optgroup>
@@ -1440,35 +1727,30 @@ export function AcousticWorkbench({
 
                     <button
                       type="button"
-                      onClick={() => {
-                        setEditingDriver(null);
-                        setDriverModalOpen(true);
-                      }}
+                      onClick={() => onOpenDriverModal?.(null, inspectedDriverPreset)}
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded bg-red-600 text-white hover:bg-red-500 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Nowy głośnik</span>
                     </button>
 
-                    {inspectedDriverPreset && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingDriver(
-                            inspectedDriverPreset.isCustom ? inspectedDriverPreset : null,
-                          );
-                          setDriverModalOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded bg-[#161920] border border-white/[0.12] text-zinc-200 hover:text-white"
-                      >
-                        <Edit3 className="w-3.5 h-3.5 text-cyan-300" />
-                        <span>
-                          {inspectedDriverPreset.isCustom ? 'Edytuj T-S' : 'Klonuj jako własny'}
-                        </span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenDriverModal?.(
+                          inspectedDriverPreset.isCustom ? inspectedDriverPreset : null,
+                          inspectedDriverPreset,
+                        )
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded bg-[#161920] border border-white/[0.12] text-zinc-200 hover:text-white"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>
+                        {inspectedDriverPreset.isCustom ? 'Edytuj T-S' : 'Klonuj jako własny'}
+                      </span>
+                    </button>
 
-                    {inspectedDriverPreset?.isCustom && onDeleteCustomDriver && (
+                    {inspectedDriverPreset.isCustom && onDeleteCustomDriver && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1484,72 +1766,224 @@ export function AcousticWorkbench({
                     )}
                   </div>
 
-                  {/* Placement & Wiring */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#161920] border border-white/[0.08] rounded-md p-3">
-                    <label className="space-y-1">
-                      <span className="text-[11px] text-zinc-400 block">Liczba głośników</span>
-                      <select
-                        value={selectedVariant.driverCount ?? params.driverCount}
-                        onChange={(e) =>
-                          updateSelectedVariant({
-                            driverCount: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 | 6,
-                          })
-                        }
-                        className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs font-mono-num text-white"
-                      >
-                        {[1, 2, 3, 4, 5, 6].map((n) => (
-                          <option key={n} value={n}>
-                            {n}×
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  {/* Placement, Coils & Wiring */}
+                  <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <label className="space-y-1">
+                        <span className="text-[11px] text-zinc-400 block">Liczba głośników</span>
+                        <select
+                          value={activeDriverCountForUi}
+                          onChange={(e) =>
+                            updateSelectedVariant({
+                              driverCount: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 | 6,
+                            })
+                          }
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs font-mono-num text-white"
+                        >
+                          {[1, 2, 3, 4, 5, 6].map((n) => (
+                            <option key={n} value={n}>
+                              {n}×
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                    <div className="space-y-1">
-                      <span className="text-[11px] text-zinc-400 block">Układ akustyczny</span>
-                      <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]">
-                        <button
-                          type="button"
-                          onClick={() => updateSelectedVariant({ isobaric: false })}
-                          className={`py-1 text-[11px] rounded ${
-                            !selectedVariant.isobaric
-                              ? 'bg-red-600 text-white font-semibold'
-                              : 'text-zinc-400 hover:text-white'
-                          }`}
-                        >
-                          Standard
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => updateSelectedVariant({ isobaric: true })}
-                          className={`py-1 text-[11px] rounded ${
-                            selectedVariant.isobaric
-                              ? 'bg-red-600 text-white font-semibold'
-                              : 'text-zinc-400 hover:text-white'
-                          }`}
-                        >
-                          Izobaryk
-                        </button>
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-zinc-400 block">Układ akustyczny</span>
+                        <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]">
+                          <button
+                            type="button"
+                            onClick={() => updateSelectedVariant({ isobaric: false })}
+                            className={`py-1 text-[11px] rounded ${
+                              !selectedVariant.isobaric
+                                ? 'bg-red-600 text-white font-semibold'
+                                : 'text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            Standard
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateSelectedVariant({ isobaric: true })}
+                            className={`py-1 text-[11px] rounded ${
+                              selectedVariant.isobaric
+                                ? 'bg-red-600 text-white font-semibold'
+                                : 'text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            Izobaryk
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <span className="text-[11px] text-zinc-400 block">Ilość cewek</span>
+                        <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]">
+                          {([1, 2] as const).map((vc) => (
+                            <button
+                              key={vc}
+                              type="button"
+                              onClick={() =>
+                                updateSelectedVariant({
+                                  voiceCoilCount: vc,
+                                  coilWiring:
+                                    vc === 2
+                                      ? selectedElecLoad.effectiveCoilWiring === 'series'
+                                        ? 'series'
+                                        : 'parallel'
+                                      : 'single',
+                                })
+                              }
+                              className={`py-1 text-[11px] font-mono-num rounded ${
+                                selectedElecLoad.voiceCoilCount === vc
+                                  ? 'bg-red-600 text-white font-semibold'
+                                  : 'text-zinc-400 hover:text-white'
+                              }`}
+                            >
+                              {vc === 1 ? '1× SVC' : '2× DVC'}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
-                    <label className="space-y-1">
-                      <span className="text-[11px] text-zinc-400 block">Połączenie cewek</span>
-                      <select
-                        value={selectedVariant.wiring ?? 'parallel'}
-                        onChange={(e) =>
-                          updateSelectedVariant({ wiring: e.target.value as DriverWiringType })
-                        }
-                        className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs text-white"
-                      >
-                        <option value="parallel">Równoległe (Parallel)</option>
-                        <option value="series">Szeregowe (Series)</option>
-                      </select>
-                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 border-t border-white/[0.06] text-xs">
+                      <label className="space-y-1">
+                        <span className="text-[11px] text-zinc-400 block">Z cewki (Ω)</span>
+                        <ImmediateNumberInput
+                          min={0.5}
+                          max={16}
+                          decimals={2}
+                          value={
+                            selectedVariant.coilNominalOhms ??
+                            (selectedVariant.isLiveProject
+                              ? params.driverCoilNominalOhms
+                              : inspectedDriverPreset.coilNominalOhms ?? 4)
+                          }
+                          onChange={(coilNominalOhms) => updateSelectedVariant({ coilNominalOhms })}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
+                        />
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-[11px] text-zinc-400 block">Re cewki (Ω)</span>
+                        <ImmediateNumberInput
+                          min={0.2}
+                          max={16}
+                          decimals={2}
+                          value={
+                            selectedVariant.coilReOhms ??
+                            (selectedVariant.isLiveProject
+                              ? params.driverCoilReOhms
+                              : inspectedDriverPreset.coilReOhms ?? 3.2)
+                          }
+                          onChange={(coilReOhms) => updateSelectedVariant({ coilReOhms })}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
+                        />
+                      </label>
+
+                      {selectedElecLoad.voiceCoilCount === 2 && (
+                        <label className="space-y-1">
+                          <span className="text-[11px] text-zinc-400 block">Łączenie cewek</span>
+                          <select
+                            value={selectedElecLoad.effectiveCoilWiring}
+                            onChange={(e) =>
+                              updateSelectedVariant({
+                                coilWiring: e.target.value as CoilWiringMode,
+                              })
+                            }
+                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs text-white"
+                          >
+                            <option value="parallel">Równoległe</option>
+                            <option value="series">Szeregowe</option>
+                          </select>
+                        </label>
+                      )}
+
+                      {activeDriverCountForUi >= 2 && (
+                        <label className="space-y-1">
+                          <span className="text-[11px] text-zinc-400 block">Łączenie głośników</span>
+                          <select
+                            value={
+                              selectedVariant.wiring ??
+                              (selectedVariant.isLiveProject ? params.driverArrayWiring : 'parallel')
+                            }
+                            onChange={(e) =>
+                              updateSelectedVariant({ wiring: e.target.value as DriverWiringType })
+                            }
+                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 text-xs text-white"
+                          >
+                            <option value="parallel">Równoległe</option>
+                            <option value="series">Szeregowe</option>
+                            {(activeDriverCountForUi === 4 || activeDriverCountForUi === 6) && (
+                              <option value="series_parallel">
+                                Szereg.-Równol. ({activeDriverCountForUi === 4 ? '2S2P' : '2S3P'})
+                              </option>
+                            )}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+
+                    <div
+                      data-testid="wsd-impedance-summary"
+                      className="bg-[#08090C] border border-cyan-500/25 rounded px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono-num"
+                    >
+                      <span className="text-zinc-400 font-sans">
+                        Wypadkowe obciążenie wzmacniacza:
+                      </span>
+                      <span className="text-cyan-300 font-semibold">
+                        {selectedElecLoad.totalNominalOhms.toFixed(2).replace(/\.00$/, '.0')} Ω · Re{' '}
+                        {selectedElecLoad.totalReOhms.toFixed(2)} Ω ({selectedElecLoad.wiringSummaryLabel})
+                      </span>
+                    </div>
+
+                    {/* Quick T-S Parameter Strip + Full Database Viewer trigger right in Głośnik tab */}
+                    <div className="bg-[#08090C] border border-white/[0.06] rounded p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-medium text-zinc-300">
+                          Szybki podgląd T-S i montażu ({inspectedDriverPreset.sizeLabel})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openDriverCatalog(inspectedDriverPreset.id)}
+                          className="text-[11px] text-cyan-300 hover:underline inline-flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Pełne parametry bazy głośników</span>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 text-[10px] font-mono-num">
+                        <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
+                          <span className="text-zinc-500">Fs</span>
+                          <span className="text-white">{derivedDriver.fs.toFixed(1)} Hz</span>
+                        </div>
+                        <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
+                          <span className="text-zinc-500">Qts</span>
+                          <span className="text-cyan-300">{derivedDriver.qts.toFixed(3)}</span>
+                        </div>
+                        <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
+                          <span className="text-zinc-500">Vas</span>
+                          <span className="text-white">{derivedDriver.vas.toFixed(1)} L</span>
+                        </div>
+                        <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
+                          <span className="text-zinc-500">Xmax</span>
+                          <span className="text-white">{derivedDriver.xmax} mm</span>
+                        </div>
+                        <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
+                          <span className="text-zinc-500">SPL</span>
+                          <span className="text-red-400">{derivedDriver.spl1w1m.toFixed(1)} dB</span>
+                        </div>
+                        <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
+                          <span className="text-zinc-500">Otwór</span>
+                          <span className="text-zinc-200">{inspectedDriverPreset.cutoutDia} mm</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Right: WinISD Advanced Driver Options (Thermal Rise + Temp Coeff + Added Mass) */}
+                {/* Right: Advanced Driver Options (Thermal Rise + Temp Coeff + Added Mass) */}
                 <div className="xl:col-span-5 bg-[#161920] border border-white/[0.08] rounded-md p-3.5 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-white">
@@ -1568,16 +2002,13 @@ export function AcousticWorkbench({
                       <span className="text-[11px] text-zinc-400 block">
                         Przyrost temp. cewki (°C)
                       </span>
-                      <input
-                        type="number"
+                      <ImmediateNumberInput
                         min={0}
                         max={220}
-                        step={5}
+                        decimals={0}
                         value={selectedVariant.voiceCoilTempRiseC ?? 0}
-                        onChange={(e) =>
-                          updateSelectedVariant({
-                            voiceCoilTempRiseC: Math.max(0, Math.min(220, Number(e.target.value) || 0)),
-                          })
+                        onChange={(voiceCoilTempRiseC) =>
+                          updateSelectedVariant({ voiceCoilTempRiseC })
                         }
                         className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                       />
@@ -1587,16 +2018,13 @@ export function AcousticWorkbench({
                       <span className="text-[11px] text-zinc-400 block">
                         Współcz. temp. (1000/°C)
                       </span>
-                      <input
-                        type="number"
+                      <ImmediateNumberInput
                         min={0}
                         max={10}
-                        step={0.05}
+                        decimals={2}
                         value={selectedVariant.voiceCoilTempCoeff ?? 3.9}
-                        onChange={(e) =>
-                          updateSelectedVariant({
-                            voiceCoilTempCoeff: Math.max(0, Number(e.target.value) || 3.9),
-                          })
+                        onChange={(voiceCoilTempCoeff) =>
+                          updateSelectedVariant({ voiceCoilTempCoeff })
                         }
                         className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                       />
@@ -1606,17 +2034,12 @@ export function AcousticWorkbench({
                       <span className="text-[11px] text-zinc-400 block">
                         Dodana masa membrany (g)
                       </span>
-                      <input
-                        type="number"
+                      <ImmediateNumberInput
                         min={0}
                         max={500}
-                        step={2}
+                        decimals={1}
                         value={selectedVariant.addedMassG ?? 0}
-                        onChange={(e) =>
-                          updateSelectedVariant({
-                            addedMassG: Math.max(0, Number(e.target.value) || 0),
-                          })
-                        }
+                        onChange={(addedMassG) => updateSelectedVariant({ addedMassG })}
                         className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                       />
                     </label>
@@ -1663,36 +2086,25 @@ export function AcousticWorkbench({
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">Objętość netto Vb (L)</span>
-                  <input
-                    type="number"
+                  <ImmediateNumberInput
                     min={4}
                     max={800}
-                    step={1}
-                    value={Number(selectedVariant.netVolumeL.toFixed(1))}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      if (Number.isFinite(v) && v >= 4) {
-                        updateSelectedVariant({ netVolumeL: v });
-                      }
-                    }}
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                    decimals={1}
+                    value={selectedVariant.netVolumeL}
+                    onChange={(netVolumeL) => updateSelectedVariant({ netVolumeL })}
+                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
                 </label>
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">Szczelność Ql</span>
-                  <input
-                    type="number"
+                  <ImmediateNumberInput
                     min={3}
                     max={25}
-                    step={1}
+                    decimals={1}
                     value={selectedVariant.ql ?? 7}
-                    onChange={(e) =>
-                      updateSelectedVariant({
-                        ql: Math.max(3, Math.min(25, Number(e.target.value) || 7)),
-                      })
-                    }
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                    onChange={(ql) => updateSelectedVariant({ ql })}
+                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
                 </label>
 
@@ -1811,17 +2223,13 @@ export function AcousticWorkbench({
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
                         <label className="sm:col-span-3 space-y-1">
                           <span className="text-[11px] text-zinc-400 block">Strojenie Fb (Hz)</span>
-                          <input
-                            type="number"
+                          <ImmediateNumberInput
                             min={15}
                             max={90}
-                            step="any"
-                            value={Number(selectedVariant.tuningHz.toFixed(1))}
-                            onChange={(e) => {
-                              const v = Number(e.target.value);
-                              if (Number.isFinite(v) && v >= 15) updateSelectedVariant({ tuningHz: v });
-                            }}
-                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                            decimals={1}
+                            value={selectedVariant.tuningHz}
+                            onChange={(tuningHz) => updateSelectedVariant({ tuningHz })}
+                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                           />
                         </label>
 
@@ -1857,14 +2265,12 @@ export function AcousticWorkbench({
                           <span className="text-[11px] text-zinc-400 block">
                             Średnica wew. rury Ø (mm)
                           </span>
-                          <input
-                            type="number"
+                          <ImmediateNumberInput
                             min={35}
                             max={320}
-                            step="any"
+                            decimals={0}
                             value={activePipeDiaMm}
-                            onChange={(e) => {
-                              const d = Math.max(35, Math.min(320, Number(e.target.value) || 100));
+                            onChange={(d) => {
                               const area = activePipeCount * Math.PI * Math.pow(d / 20, 2);
                               updateSelectedVariant({
                                 portShape: 'round',
@@ -1873,7 +2279,7 @@ export function AcousticWorkbench({
                                 portAreaCm2: Number(area.toFixed(1)),
                               });
                             }}
-                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                           />
                         </label>
 
@@ -1943,33 +2349,25 @@ export function AcousticWorkbench({
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
                         <label className="space-y-1">
                           <span className="text-[11px] text-zinc-400 block">Strojenie Fb (Hz)</span>
-                          <input
-                            type="number"
+                          <ImmediateNumberInput
                             min={15}
                             max={90}
-                            step="any"
-                            value={Number(selectedVariant.tuningHz.toFixed(1))}
-                            onChange={(e) => {
-                              const v = Number(e.target.value);
-                              if (Number.isFinite(v) && v >= 15) updateSelectedVariant({ tuningHz: v });
-                            }}
-                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                            decimals={1}
+                            value={selectedVariant.tuningHz}
+                            onChange={(tuningHz) => updateSelectedVariant({ tuningHz })}
+                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                           />
                         </label>
 
                         <label className="space-y-1">
                           <span className="text-[11px] text-zinc-400 block">Pole portu S (cm²)</span>
-                          <input
-                            type="number"
-                            min={20}
+                          <ImmediateNumberInput
+                            min={15}
                             max={2500}
-                            step="any"
-                            value={Math.round(selectedVariant.portAreaCm2)}
-                            onChange={(e) => {
-                              const v = Number(e.target.value);
-                              if (Number.isFinite(v) && v >= 15) updateSelectedVariant({ portAreaCm2: v });
-                            }}
-                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                            decimals={1}
+                            value={selectedVariant.portAreaCm2}
+                            onChange={(portAreaCm2) => updateSelectedVariant({ portAreaCm2 })}
+                            className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                           />
                         </label>
 
@@ -2038,12 +2436,22 @@ export function AcousticWorkbench({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   {/* Subsonic HPF */}
-                  <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
+                  <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="font-medium text-zinc-200">Filtr Subsonic (HPF)</span>
-                      <span className="font-mono-num text-cyan-300">
-                        {signal.hpfType === 'none' ? 'Wyłączony' : `${signal.hpfHz} Hz`}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <ImmediateNumberInput
+                          min={12}
+                          max={80}
+                          decimals={1}
+                          disabled={signal.hpfType === 'none'}
+                          aria-label="Częstotliwość filtra Subsonic"
+                          value={signal.hpfHz}
+                          onChange={(hpfHz) => setSignal((prev) => ({ ...prev, hpfHz }))}
+                          className="w-20 bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-right font-mono-num text-xs text-cyan-300 disabled:opacity-40 focus:outline-none focus:border-red-500"
+                        />
+                        <span className="text-[11px] text-zinc-400 font-mono-num">Hz</span>
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-1">
                       {FILTER_OPTIONS.map((f) => (
@@ -2061,28 +2469,25 @@ export function AcousticWorkbench({
                         </button>
                       ))}
                     </div>
-                    <input
-                      type="range"
-                      min={15}
-                      max={50}
-                      step={1}
-                      disabled={signal.hpfType === 'none'}
-                      value={signal.hpfHz}
-                      aria-label="Częstotliwość filtra Subsonic"
-                      onChange={(e) =>
-                        setSignal((prev) => ({ ...prev, hpfHz: Number(e.target.value) }))
-                      }
-                      className="w-full accent-cyan-400 disabled:opacity-40"
-                    />
                   </div>
 
                   {/* Low-Pass LPF */}
-                  <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
+                  <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
                       <span className="font-medium text-zinc-200">Filtr Low-Pass (LPF)</span>
-                      <span className="font-mono-num text-red-400">
-                        {signal.lpfType === 'none' ? 'Wyłączony' : `${signal.lpfHz} Hz`}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <ImmediateNumberInput
+                          min={35}
+                          max={300}
+                          decimals={1}
+                          disabled={signal.lpfType === 'none'}
+                          aria-label="Częstotliwość filtra Low-Pass"
+                          value={signal.lpfHz}
+                          onChange={(lpfHz) => setSignal((prev) => ({ ...prev, lpfHz }))}
+                          className="w-20 bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-right font-mono-num text-xs text-red-400 disabled:opacity-40 focus:outline-none focus:border-red-500"
+                        />
+                        <span className="text-[11px] text-zinc-400 font-mono-num">Hz</span>
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-1">
                       {FILTER_OPTIONS.map((f) => (
@@ -2100,19 +2505,6 @@ export function AcousticWorkbench({
                         </button>
                       ))}
                     </div>
-                    <input
-                      type="range"
-                      min={45}
-                      max={220}
-                      step={1}
-                      disabled={signal.lpfType === 'none'}
-                      value={signal.lpfHz}
-                      aria-label="Częstotliwość filtra Low-Pass"
-                      onChange={(e) =>
-                        setSignal((prev) => ({ ...prev, lpfHz: Number(e.target.value) }))
-                      }
-                      className="w-full accent-red-500 disabled:opacity-40"
-                    />
                   </div>
                 </div>
 
@@ -2135,49 +2527,38 @@ export function AcousticWorkbench({
                     <div className="grid grid-cols-3 gap-2 text-xs">
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">Częst. (Hz)</span>
-                        <input
-                          type="number"
+                        <ImmediateNumberInput
                           min={18}
-                          max={140}
+                          max={160}
+                          decimals={1}
                           disabled={!signal.peqEnabled}
                           value={signal.peqHz ?? 40}
-                          onChange={(e) =>
-                            setSignal((prev) => ({ ...prev, peqHz: Number(e.target.value) || 40 }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(peqHz) => setSignal((prev) => ({ ...prev, peqHz }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">Zysk (dB)</span>
-                        <input
-                          type="number"
-                          min={-12}
-                          max={12}
-                          step={0.5}
+                        <ImmediateNumberInput
+                          min={-15}
+                          max={15}
+                          decimals={1}
                           disabled={!signal.peqEnabled}
                           value={signal.peqGainDb ?? 3}
-                          onChange={(e) =>
-                            setSignal((prev) => ({
-                              ...prev,
-                              peqGainDb: Math.max(-12, Math.min(12, Number(e.target.value) || 0)),
-                            }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(peqGainDb) => setSignal((prev) => ({ ...prev, peqGainDb }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">Dobroć Q</span>
-                        <input
-                          type="number"
-                          min={0.4}
-                          max={10}
-                          step={0.1}
+                        <ImmediateNumberInput
+                          min={0.3}
+                          max={12}
+                          decimals={2}
                           disabled={!signal.peqEnabled}
                           value={signal.peqQ ?? 2.0}
-                          onChange={(e) =>
-                            setSignal((prev) => ({ ...prev, peqQ: Number(e.target.value) || 2 }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(peqQ) => setSignal((prev) => ({ ...prev, peqQ }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                     </div>
@@ -2201,52 +2582,50 @@ export function AcousticWorkbench({
                     <div className="grid grid-cols-4 gap-2 text-xs">
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">f0 (Hz)</span>
-                        <input
-                          type="number"
+                        <ImmediateNumberInput
+                          min={15}
+                          max={140}
+                          decimals={1}
                           disabled={!signal.ltEnabled}
                           value={signal.ltF0Hz ?? 46}
-                          onChange={(e) =>
-                            setSignal((prev) => ({ ...prev, ltF0Hz: Number(e.target.value) || 46 }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(ltF0Hz) => setSignal((prev) => ({ ...prev, ltF0Hz }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">Q0</span>
-                        <input
-                          type="number"
-                          step={0.05}
+                        <ImmediateNumberInput
+                          min={0.25}
+                          max={3}
+                          decimals={2}
                           disabled={!signal.ltEnabled}
                           value={signal.ltQ0 ?? 0.85}
-                          onChange={(e) =>
-                            setSignal((prev) => ({ ...prev, ltQ0: Number(e.target.value) || 0.85 }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(ltQ0) => setSignal((prev) => ({ ...prev, ltQ0 }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">fp (Hz)</span>
-                        <input
-                          type="number"
+                        <ImmediateNumberInput
+                          min={12}
+                          max={120}
+                          decimals={1}
                           disabled={!signal.ltEnabled}
                           value={signal.ltFpHz ?? 28}
-                          onChange={(e) =>
-                            setSignal((prev) => ({ ...prev, ltFpHz: Number(e.target.value) || 28 }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(ltFpHz) => setSignal((prev) => ({ ...prev, ltFpHz }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                       <label className="space-y-1">
                         <span className="text-[11px] text-zinc-400 block">Qp</span>
-                        <input
-                          type="number"
-                          step={0.05}
+                        <ImmediateNumberInput
+                          min={0.3}
+                          max={2.5}
+                          decimals={3}
                           disabled={!signal.ltEnabled}
                           value={signal.ltQp ?? 0.707}
-                          onChange={(e) =>
-                            setSignal((prev) => ({ ...prev, ltQp: Number(e.target.value) || 0.707 }))
-                          }
-                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40"
+                          onChange={(ltQp) => setSignal((prev) => ({ ...prev, ltQp }))}
+                          className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 font-mono-num text-white disabled:opacity-40 focus:outline-none focus:border-red-500"
                         />
                       </label>
                     </div>
@@ -2265,7 +2644,6 @@ export function AcousticWorkbench({
                         type="button"
                         onClick={() => {
                           const p = params.driverPowerW * params.driverCount;
-                          setPowerInput(String(p));
                           setSignal((prev) => ({ ...prev, powerW: p }));
                         }}
                         className="text-[10px] text-red-400 hover:underline inline-flex items-center gap-0.5"
@@ -2273,37 +2651,26 @@ export function AcousticWorkbench({
                         <RotateCcw className="w-2.5 h-2.5" /> RMS
                       </button>
                     </span>
-                    <input
-                      type="number"
-                      min={10}
-                      max={20000}
-                      step={50}
-                      value={powerInput}
-                      onChange={(e) => {
-                        setPowerInput(e.target.value);
-                        const n = Number(e.target.value);
-                        if (Number.isFinite(n) && n >= 1) {
-                          setSignal((prev) => ({ ...prev, powerW: n }));
-                        }
-                      }}
-                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                    <ImmediateNumberInput
+                      min={1}
+                      max={30000}
+                      decimals={0}
+                      value={signal.powerW}
+                      onChange={(powerW) => setSignal((prev) => ({ ...prev, powerW }))}
+                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">Rg kabli / zwrot. (Ω)</span>
-                    <input
-                      type="number"
+                    <ImmediateNumberInput
                       min={0}
                       max={4}
-                      step={0.05}
+                      decimals={2}
                       value={signal.seriesResistanceOhms ?? 0}
-                      onChange={(e) => {
-                        const n = Number(e.target.value);
-                        if (Number.isFinite(n) && n >= 0) {
-                          setSignal((prev) => ({ ...prev, seriesResistanceOhms: n }));
-                        }
-                      }}
-                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                      onChange={(seriesResistanceOhms) =>
+                        setSignal((prev) => ({ ...prev, seriesResistanceOhms }))
+                      }
+                      className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                 </div>
@@ -2347,37 +2714,29 @@ export function AcousticWorkbench({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs items-end">
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">Gęstość powietrza ρ (kg/m³)</span>
-                  <input
-                    type="number"
+                  <ImmediateNumberInput
                     min={0.9}
                     max={1.4}
-                    step={0.005}
+                    decimals={3}
                     value={signal.airDensityKgM3 ?? 1.204}
-                    onChange={(e) =>
-                      setSignal((p) => ({
-                        ...p,
-                        airDensityKgM3: Math.max(0.9, Number(e.target.value) || 1.204),
-                      }))
+                    onChange={(airDensityKgM3) =>
+                      setSignal((p) => ({ ...p, airDensityKgM3 }))
                     }
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
                 </label>
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">Prędkość dźwięku c (m/s)</span>
-                  <input
-                    type="number"
+                  <ImmediateNumberInput
                     min={310}
                     max={370}
-                    step={0.5}
+                    decimals={1}
                     value={signal.speedOfSoundMs ?? 343.2}
-                    onChange={(e) =>
-                      setSignal((p) => ({
-                        ...p,
-                        speedOfSoundMs: Math.max(310, Number(e.target.value) || 343.2),
-                      }))
+                    onChange={(speedOfSoundMs) =>
+                      setSignal((p) => ({ ...p, speedOfSoundMs }))
                     }
-                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white"
+                    className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
                 </label>
 
@@ -2409,8 +2768,8 @@ export function AcousticWorkbench({
                 <div className="space-y-1">
                   <div className="text-white font-semibold">{selectedVariant.name}</div>
                   <div className="text-zinc-400 font-mono-num">
-                    Głośnik: {selectedVariant.driverCount ?? params.driverCount}×{' '}
-                    {inspectedDriverPreset?.name ?? params.driverName ?? 'Aktywny'} · Vb{' '}
+                    Głośnik: {activeDriverCountForUi}×{' '}
+                    {inspectedDriverPreset.name} · {selectedElecLoad.totalNominalOhms.toFixed(1)} Ω · Vb{' '}
                     {selectedVariant.netVolumeL.toFixed(1)} L ·{' '}
                     {selectedVariant.enclosureType === 'sealed'
                       ? 'Zamknięta'
@@ -2534,36 +2893,44 @@ export function AcousticWorkbench({
       <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white flex flex-wrap items-center gap-2">
               <Sparkles className="w-4 h-4 text-red-400" />
               <span>
-                Pełne parametry T-S i wyrównania:{' '}
+                Podgląd parametrów T-S i wyrównania:{' '}
                 <span className="text-cyan-300">
-                  {inspectedDriverPreset?.name ?? params.driverName ?? 'Wybrany głośnik'}
+                  {inspectedDriverPreset.name}
                 </span>
+              </span>
+              <span className="text-[11px] font-mono-num px-2 py-0.5 rounded bg-[#08090C] border border-cyan-500/30 text-cyan-300">
+                {selectedElecLoad.wiringSummaryLabel} → {selectedElecLoad.totalNominalOhms.toFixed(1)} Ω
               </span>
             </h3>
             <p className="text-xs text-zinc-400 mt-1">{alignments.recommendation}</p>
           </div>
           <button
             type="button"
-            onClick={() => {
-              setEditingDriver(inspectedDriverPreset?.isCustom ? inspectedDriverPreset : null);
-              setDriverModalOpen(true);
-            }}
+            onClick={() =>
+              onOpenDriverModal?.(
+                inspectedDriverPreset.isCustom ? inspectedDriverPreset : null,
+                inspectedDriverPreset,
+              )
+            }
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded bg-[#161920] border border-white/[0.12] text-zinc-200 hover:text-white"
           >
             <Sliders className="w-3.5 h-3.5 text-red-400" />
             <span>
-              {inspectedDriverPreset?.isCustom
+              {inspectedDriverPreset.isCustom
                 ? 'Edytuj parametry T-S'
                 : 'Dostosuj jako własny głośnik'}
             </span>
           </button>
         </div>
 
-        {/* Full WinISD Derived T-S Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-[11px] font-mono-num">
+        {/* Full Derived T-S Preview Grid */}
+        <div
+          data-testid="wsd-driver-preview"
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2 text-[11px] font-mono-num"
+        >
           {[
             { label: 'Fs', val: `${derivedDriver.fs.toFixed(1)} Hz`, cls: 'text-white' },
             { label: 'Qes', val: derivedDriver.qes.toFixed(3), cls: 'text-white' },
@@ -2581,8 +2948,16 @@ export function AcousticWorkbench({
             { label: 'Rms', val: `${derivedDriver.rms.toFixed(2)} kg/s`, cls: 'text-zinc-200' },
             { label: 'Sd (łącz.)', val: `${Math.round(derivedDriver.sdCm2)} cm²`, cls: 'text-white' },
             { label: 'Vd (łącz.)', val: `${Math.round(derivedDriver.vdCm3)} cm³`, cls: 'text-white' },
-            { label: 'Re / Le', val: `${derivedDriver.re.toFixed(1)} Ω · ${derivedDriver.le.toFixed(1)} mH`, cls: 'text-zinc-200' },
-            { label: 'Pe / Xmax', val: `${derivedDriver.ratedPowerTotalW} W · ${derivedDriver.xmax} mm`, cls: 'text-red-300' },
+            {
+              label: 'Z / Re / Le',
+              val: `${derivedDriver.zNom.toFixed(1)} Ω · ${derivedDriver.re.toFixed(2)} Ω · ${derivedDriver.le.toFixed(1)} mH`,
+              cls: 'text-cyan-300',
+            },
+            {
+              label: 'Pe / Xmax',
+              val: `${derivedDriver.ratedPowerTotalW} W · ${derivedDriver.xmax} mm`,
+              cls: 'text-red-300',
+            },
           ].map((item) => (
             <div
               key={item.label}
@@ -2637,7 +3012,15 @@ export function AcousticWorkbench({
                       tuningHz: sug.tuningHz ?? 35,
                       portAreaCm2: sug.portAreaCm2,
                       driverPresetId: selectedVariant.driverPresetId ?? params.driverPresetId,
-                      driverCount: selectedVariant.driverCount ?? params.driverCount,
+                      driverCount: activeDriverCountForUi,
+                      voiceCoilCount: selectedElecLoad.voiceCoilCount,
+                      coilNominalOhms:
+                        selectedVariant.coilNominalOhms ?? params.driverCoilNominalOhms,
+                      coilReOhms: selectedVariant.coilReOhms ?? params.driverCoilReOhms,
+                      coilWiring: selectedElecLoad.effectiveCoilWiring,
+                      wiring:
+                        selectedVariant.wiring ??
+                        (selectedVariant.isLiveProject ? params.driverArrayWiring : 'parallel'),
                     })
                   }
                   className="flex-1 py-1.5 px-2 text-[11px] font-medium rounded border border-white/15 text-zinc-200 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
@@ -2658,13 +3041,232 @@ export function AcousticWorkbench({
         </div>
       </div>
 
-      <DriverTsModal
-        open={driverModalOpen}
-        editingDriver={editingDriver}
-        initialTemplateDriver={inspectedDriverPreset ?? DRIVER_PRESETS[0]}
-        onClose={() => setDriverModalOpen(false)}
-        onSaveDriver={handleSaveDriverFromModal}
-      />
+      {/* WSD Driver Database & Full Parameter Inspector Modal */}
+      {driverCatalogOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Baza i parametry głośników w WSD"
+        >
+          <div className="w-full max-w-5xl max-h-[88vh] flex flex-col bg-[#111318] border border-white/[0.14] rounded-lg shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-4 py-3 bg-[#0D0F14] border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Database className="w-5 h-5 text-cyan-300 shrink-0" />
+                <div>
+                  <h3 className="text-sm font-semibold text-white">
+                    Parametry głośników T-S i wymiary montażowe ({allDrivers.length} modeli)
+                  </h3>
+                  <p className="text-[11px] text-zinc-400">
+                    Przeglądaj parametry Deaf Bonce MF-12R D2 oraz własnych głośników T-S bez zmiany bieżącego projektu.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDriverCatalogOpen(false)}
+                aria-label="Zamknij okno parametrów głośników"
+                className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filter bar */}
+            <div className="px-4 py-2.5 bg-[#161920] border-b border-white/[0.08] flex flex-wrap items-center gap-2.5 shrink-0">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={catalogQuery}
+                  onChange={(e) => setCatalogQuery(e.target.value)}
+                  placeholder="Szukaj modelu (np. Deaf Bonce, Dayton, Sundown, 12)..."
+                  className="w-full bg-[#08090C] border border-white/[0.12] rounded pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]">
+                {(['all', '8"', '10"', '12"', '15"', '18"'] as const).map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    onClick={() => setCatalogSizeFilter(sz)}
+                    className={`px-2 py-1 text-[11px] font-mono-num rounded transition-colors ${
+                      catalogSizeFilter === sz
+                        ? 'bg-red-600 text-white font-semibold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {sz === 'all' ? 'Wszystkie' : sz}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Split Body: Driver List + Full Engineering Sheet */}
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+              <div className="lg:col-span-5 border-b lg:border-b-0 lg:border-r border-white/[0.08] overflow-y-auto cad-scroll max-h-[34vh] lg:max-h-none divide-y divide-white/[0.05]">
+                {filteredCatalogDrivers.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-zinc-400">
+                    Brak głośników pasujących do filtra.
+                  </div>
+                ) : (
+                  filteredCatalogDrivers.map((drv) => {
+                    const active = drv.id === selectedCatalogDriver.id;
+                    const coilText =
+                      drv.voiceCoilCount === 2
+                        ? `2×${drv.coilNominalOhms ?? 2}Ω DVC`
+                        : `1×${drv.coilNominalOhms ?? drv.zNom ?? 4}Ω SVC`;
+                    return (
+                      <button
+                        key={drv.id}
+                        type="button"
+                        onClick={() => setCatalogDriverId(drv.id)}
+                        className={`w-full text-left px-3.5 py-2.5 transition-colors flex items-center justify-between gap-2 ${
+                          active
+                            ? 'bg-red-600/15 border-l-2 border-l-red-500'
+                            : 'hover:bg-white/[0.03]'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-white truncate flex items-center gap-1.5">
+                            <span className="truncate">{drv.name}</span>
+                            {drv.isCustom && (
+                              <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 text-[9px] shrink-0">
+                                Własny
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-zinc-400 font-mono-num mt-0.5 truncate">
+                            {drv.sizeLabel} · {coilText} · {drv.powerW} W RMS · {drv.source ?? 'Baza'}
+                          </div>
+                        </div>
+                        <div className="text-right font-mono-num text-[10px] text-zinc-300 shrink-0">
+                          <div>Fs {drv.fs} Hz</div>
+                          <div className="text-cyan-300">Qts {drv.qts.toFixed(2)}</div>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="lg:col-span-7 overflow-y-auto cad-scroll p-4 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-white/[0.08]">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-base font-semibold text-white">
+                        {selectedCatalogDriver.name}
+                      </h4>
+                      <span className="px-2 py-0.5 rounded bg-[#161920] border border-white/[0.1] text-[10px] font-mono-num text-cyan-300">
+                        {selectedCatalogDriver.sizeLabel}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      Źródło: {selectedCatalogDriver.source ?? (selectedCatalogDriver.isCustom ? 'Własny T-S' : 'Deaf Bonce Datasheet')} ·{' '}
+                      {selectedCatalogDriver.voiceCoilCount === 2
+                        ? `2× ${selectedCatalogDriver.coilNominalOhms ?? 2} Ω (Re cewki ${(selectedCatalogDriver.coilReOhms ?? 1.8).toFixed(2)} Ω)`
+                        : `1× ${selectedCatalogDriver.coilNominalOhms ?? selectedCatalogDriver.zNom ?? 4} Ω (Re ${(selectedCatalogDriver.coilReOhms ?? selectedCatalogDriver.re ?? 3.2).toFixed(2)} Ω)`}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDriverCatalogOpen(false);
+                        onOpenDriverModal?.(
+                          selectedCatalogDriver.isCustom ? selectedCatalogDriver : null,
+                          selectedCatalogDriver,
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded bg-[#161920] border border-white/[0.12] text-zinc-200 hover:text-white"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>{selectedCatalogDriver.isCustom ? 'Edytuj T-S' : 'Klonuj jako własny'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateSelectedVariant({ driverPresetId: selectedCatalogDriver.id });
+                        setDriverCatalogOpen(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-red-600 text-white hover:bg-red-500"
+                    >
+                      <span>Użyj w wariancie WSD</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* T-S & Electromechanical Specs */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider">
+                    Parametry Thiele-Small, cewka i mechanika
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono-num">
+                    {[
+                      { label: 'Fs', val: `${solvedCatalogDriver.fs.toFixed(1)} Hz`, cls: 'text-white' },
+                      { label: 'Qes', val: solvedCatalogDriver.qes.toFixed(3), cls: 'text-white' },
+                      { label: 'Qms', val: solvedCatalogDriver.qms.toFixed(2), cls: 'text-white' },
+                      { label: 'Qts', val: solvedCatalogDriver.qts.toFixed(3), cls: 'text-cyan-300' },
+                      { label: 'Vas', val: `${solvedCatalogDriver.vas.toFixed(1)} L`, cls: 'text-white' },
+                      { label: 'EBP (Fs/Qes)', val: `${solvedCatalogDriver.ebpHz.toFixed(1)} Hz`, cls: 'text-cyan-300' },
+                      { label: 'SPL 1W/1m', val: `${solvedCatalogDriver.spl1w1m.toFixed(1)} dB`, cls: 'text-red-400' },
+                      { label: '2.83V/1m', val: `${solvedCatalogDriver.spl283v1m.toFixed(1)} dB`, cls: 'text-white' },
+                      { label: 'η0 (sprawn.)', val: `${solvedCatalogDriver.eta0Percent.toFixed(2)}%`, cls: 'text-emerald-400' },
+                      { label: 'Bl', val: `${solvedCatalogDriver.bl.toFixed(2)} T·m`, cls: 'text-white' },
+                      { label: 'Bl² / Re', val: `${solvedCatalogDriver.bl2Re.toFixed(1)} N²/W`, cls: 'text-zinc-200' },
+                      { label: 'Mms', val: `${solvedCatalogDriver.mms.toFixed(1)} g`, cls: 'text-white' },
+                      { label: 'Cms', val: `${solvedCatalogDriver.cms.toFixed(3)} mm/N`, cls: 'text-zinc-200' },
+                      { label: 'Rms', val: `${solvedCatalogDriver.rms.toFixed(2)} kg/s`, cls: 'text-zinc-200' },
+                      { label: 'Sd / Dd', val: `${Math.round(solvedCatalogDriver.sd)} cm² / ${Math.round(solvedCatalogDriver.dd)} mm`, cls: 'text-white' },
+                      { label: 'Vd (1 szt.)', val: `${Math.round(solvedCatalogDriver.vd)} cm³`, cls: 'text-white' },
+                      { label: 'Xmax', val: `${selectedCatalogDriver.xmax} mm`, cls: 'text-amber-300' },
+                      { label: 'Moc RMS (Pe)', val: `${selectedCatalogDriver.powerW} W`, cls: 'text-red-300' },
+                      { label: 'Re (szereg.)', val: `${solvedCatalogDriver.re.toFixed(2)} Ω`, cls: 'text-cyan-300' },
+                      { label: 'Le', val: `${(selectedCatalogDriver.le ?? 1.8).toFixed(2)} mH`, cls: 'text-zinc-200' },
+                    ].map((row) => (
+                      <div
+                        key={row.label}
+                        className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex items-center justify-between gap-2"
+                      >
+                        <span className="text-zinc-400">{row.label}</span>
+                        <strong className={row.cls}>{row.val}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* CAD Mounting Dimensions */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider">
+                    Wymiary montażowe CAD 3D
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono-num">
+                    <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
+                      <span className="text-zinc-400">Otwór</span>
+                      <strong className="text-white">{selectedCatalogDriver.cutoutDia} mm</strong>
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
+                      <span className="text-zinc-400">Kosz zewn.</span>
+                      <strong className="text-white">{selectedCatalogDriver.outerDia} mm</strong>
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
+                      <span className="text-zinc-400">Głębokość</span>
+                      <strong className="text-white">{selectedCatalogDriver.depth} mm</strong>
+                    </div>
+                    <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
+                      <span className="text-zinc-400">Wyporność</span>
+                      <strong className="text-white">{selectedCatalogDriver.displacement} L</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

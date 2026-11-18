@@ -182,7 +182,7 @@ test('driverFace=top measures clearance vertically and splits Top/Bottom in cut-
     enclosureType: 'vented_round' as const,
     driverFace: 'top' as const,
     portFace: 'side_right' as const,
-    doubleFrontBaffle: true,
+    doubleFrontBaffle: false,
     externalWidth: 680,
     externalHeight: 360,
     externalDepth: 620,
@@ -197,14 +197,14 @@ test('driverFace=top measures clearance vertically and splits Top/Bottom in cut-
   };
 
   const res = calculateAcoustics(params);
-  assert.equal(res.internalHeight, 360 - 18 - 36);
+  assert.equal(res.internalHeight, 360 - 36);
   assert.equal(res.driverClearanceMm, 360 - 18 - 108);
   assert.equal(res.driverFitsFront, true);
   assert.equal(res.driverLayout.length, 5);
 
   const panels = generateCutList(params, res);
   assert.ok(panels.some((p) => p.id === 'top'));
-  assert.ok(panels.some((p) => p.id === 'top-double'));
+  assert.ok(!panels.some((p) => p.id === 'top-double'));
   assert.ok(panels.some((p) => p.id === 'bottom'));
   const sideRight = panels.find((p) => p.id === 'side-right');
   assert.ok(sideRight && sideRight.notes.includes('rura'));

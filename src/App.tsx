@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Share2 } from 'lucide-react';
 import { calculateAcoustics } from './engine/acoustics';
 import { generateCutList, optimizeCutSheet } from './engine/cutlist';
-import { BOX_TEMPLATE_PRESETS, DEFAULT_BOX_PARAMS } from './engine/presets';
+import {
+  BOX_TEMPLATE_PRESETS,
+  DEFAULT_BOX_PARAMS,
+  DRIVER_PRESETS,
+} from './engine/presets';
 import { decodeModelToken } from './engine/sharing';
-import type { BoxParams, DriverPreset } from './engine/types';
+import type { BoxParams, CoilWiringMode, DriverPreset } from './engine/types';
 import { SidebarControls } from './components/SidebarControls';
 import { TelemetryStrip } from './components/TelemetryStrip';
 import { Viewport3D } from './components/Viewport3D';
@@ -13,57 +17,158 @@ import { CutListView } from './components/CutListView';
 import { SheetNestingView } from './components/SheetNestingView';
 import { AcousticWorkbench } from './components/AcousticWorkbench';
 import { ShareModal } from './components/ShareModal';
+import { DriverTsModal } from './components/DriverTsModal';
 
 type ActiveView = '3d' | 'chart' | 'workbench' | 'cutlist' | 'nesting';
 
 const STORAGE_KEY = 'subbox_cad_project_v1';
 const CUSTOM_DRIVERS_KEY = 'subbox_cad_custom_drivers_v1';
 
+function normalizeCustomDriver(raw: DriverPreset): DriverPreset {
+  const voiceCoilCount = raw.voiceCoilCount === 2 ? 2 : 1;
+  const coilNominalOhms = raw.coilNominalOhms ?? (voiceCoilCount === 2 ? (raw.zNom ?? 4) / 2 : raw.zNom ?? 4);
+  const coilReOhms = raw.coilReOhms ?? (voiceCoilCount === 2 ? (raw.re ?? coilNominalOhms * 1.6) / 2 : raw.re ?? 3.2);
+  return {
+    ...raw,
+    isCustom: true,
+    source: raw.source ?? 'Własny T-S',
+    voiceCoilCount,
+    coilNominalOhms,
+    coilReOhms,
+  };
+}
+
 function loadCustomDrivers(): DriverPreset[] {
   try {
     const raw = window.localStorage.getItem(CUSTOM_DRIVERS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as DriverPreset[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeCustomDriver) : [];
   } catch {
     return [];
   }
 }
 
-function loadInitialState(): { params: BoxParams; sharedDriver?: DriverPreset } {
+export function driverPresetToBoxPatch(
+  drv: DriverPreset,
+  coilWiringOverride?: CoilWiringMode,
+): Partial<BoxParams> {
+  const voiceCoilCount = drv.voiceCoilCount === 2 ? 2 : 1;
+  const coilNominalOhms =
+    drv.coilNominalOhms ?? (voiceCoilCount === 2 ? (drv.zNom ?? 4) / 2 : drv.zNom ?? 4);
+  const coilReOhms =
+    drv.coilReOhms ??
+    (voiceCoilCount === 2 ? (drv.re ?? coilNominalOhms * 1.6) / 2 : drv.re ?? 3.2);
+  const coilWiring: CoilWiringMode =
+    voiceCoilCount === 2
+      ? coilWiringOverride === 'parallel' || coilWiringOverride === 'series'
+        ? coilWiringOverride
+        : 'series'
+      : 'single';
+
+  return {
+    driverPresetId: drv.id,
+    driverName: drv.name,
+    driverCutoutDia: drv.cutoutDia,
+    driverOuterDia: drv.outerDia,
+    driverDepth: drv.depth,
+    driverDisplacement: drv.displacement,
+    driverFs: drv.fs,
+    driverQts: drv.qts,
+    driverVas: drv.vas,
+    driverXmax: drv.xmax,
+    driverPowerW: drv.powerW,
+    driverVoiceCoilCount: voiceCoilCount,
+    driverCoilNominalOhms: coilNominalOhms,
+    driverCoilReOhms: coilReOhms,
+    driverCoilLeMh: drv.le ?? 1.4,
+    driverCoilWiring: coilWiring,
+  };
+}
+
+function migrateBoxParams(
+  raw: Partial<BoxParams>,
+  customDriversList: DriverPreset[],
+): BoxParams {
+  const all = [...DRIVER_PRESETS, ...customDriversList];
+  const matched = all.find((d) => d.id === raw.driverPresetId);
+  const merged: BoxParams = {
+    ...DEFAULT_BOX_PARAMS,
+    ...raw,
+    doubleFrontBaffle: false,
+  };
+  if (!matched) {
+    // Removed legacy placeholder driver -> migrate to Deaf Bonce MF-12R D2
+    Object.assign(merged, driverPresetToBoxPatch(DRIVER_PRESETS[0], 'series'));
+  } else {
+    if (merged.driverVoiceCoilCount === undefined) {
+      merged.driverVoiceCoilCount = matched.voiceCoilCount ?? 1;
+    }
+    if (merged.driverCoilNominalOhms === undefined) {
+      merged.driverCoilNominalOhms = matched.coilNominalOhms ?? 4;
+    }
+    if (merged.driverCoilReOhms === undefined) {
+      merged.driverCoilReOhms = matched.coilReOhms ?? 3.2;
+    }
+    if (merged.driverCoilLeMh === undefined) {
+      merged.driverCoilLeMh = matched.le ?? 1.4;
+    }
+    if (merged.driverCoilWiring === undefined) {
+      merged.driverCoilWiring = merged.driverVoiceCoilCount === 2 ? 'series' : 'single';
+    }
+    if (merged.driverArrayWiring === undefined) {
+      merged.driverArrayWiring = 'parallel';
+    }
+  }
+  return merged;
+}
+
+function loadInitialState(): {
+  params: BoxParams;
+  customDrivers: DriverPreset[];
+} {
+  let drivers = loadCustomDrivers();
   try {
     const query = new URLSearchParams(window.location.search);
     const modelToken = query.get('model');
     if (modelToken) {
       const decoded = decodeModelToken(modelToken);
       if (decoded) {
-        return { params: decoded.params, sharedDriver: decoded.customDriver };
+        if (
+          decoded.customDriver &&
+          !drivers.some((d) => d.id === decoded.customDriver!.id)
+        ) {
+          drivers = [...drivers, normalizeCustomDriver(decoded.customDriver)];
+        }
+        return {
+          params: migrateBoxParams(decoded.params, drivers),
+          customDrivers: drivers,
+        };
       }
     }
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { params: DEFAULT_BOX_PARAMS };
+    if (!raw) return { params: DEFAULT_BOX_PARAMS, customDrivers: drivers };
     const parsed = JSON.parse(raw) as Partial<BoxParams>;
-    return { params: { ...DEFAULT_BOX_PARAMS, ...parsed } };
+    return {
+      params: migrateBoxParams(parsed, drivers),
+      customDrivers: drivers,
+    };
   } catch {
-    return { params: DEFAULT_BOX_PARAMS };
+    return { params: DEFAULT_BOX_PARAMS, customDrivers: drivers };
   }
 }
 
 export default function App() {
   const initial = useMemo(() => loadInitialState(), []);
   const [params, setParams] = useState<BoxParams>(initial.params);
-  const [customDrivers, setCustomDrivers] = useState<DriverPreset[]>(() => {
-    const existing = loadCustomDrivers();
-    if (
-      initial.sharedDriver &&
-      !existing.some((d) => d.id === initial.sharedDriver!.id)
-    ) {
-      return [...existing, { ...initial.sharedDriver, isCustom: true }];
-    }
-    return existing;
-  });
+  const [customDrivers, setCustomDrivers] = useState<DriverPreset[]>(initial.customDrivers);
   const [activeView, setActiveView] = useState<ActiveView>('3d');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+
+  // Shared Driver T-S Modal accessible from both Sidebar and WSD
+  const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<DriverPreset | null>(null);
+  const [modalTemplateDriver, setModalTemplateDriver] = useState<DriverPreset>(DRIVER_PRESETS[0]);
 
   useEffect(() => {
     try {
@@ -85,42 +190,83 @@ export default function App() {
   const cutPanels = useMemo(() => generateCutList(params, acoustics), [params, acoustics]);
   const sheetSummary = useMemo(() => optimizeCutSheet(params, cutPanels), [params, cutPanels]);
 
+  const allDrivers = useMemo(
+    () => [...DRIVER_PRESETS, ...customDrivers],
+    [customDrivers],
+  );
+
   const activeCustomDriver = useMemo(
     () => customDrivers.find((d) => d.id === params.driverPresetId),
     [customDrivers, params.driverPresetId],
   );
 
+  const activeDriverPreset = useMemo(
+    () => allDrivers.find((d) => d.id === params.driverPresetId) ?? DRIVER_PRESETS[0],
+    [allDrivers, params.driverPresetId],
+  );
+
   const handlePatch = (patch: Partial<BoxParams>) => {
-    setParams((prev) => ({ ...prev, ...patch }));
+    setParams((prev) => ({
+      ...prev,
+      ...patch,
+      doubleFrontBaffle: false,
+    }));
   };
 
   const handleApplyTemplate = (templateId: string) => {
     const tpl = BOX_TEMPLATE_PRESETS.find((t) => t.id === templateId);
     if (!tpl) return;
-    setParams({ ...DEFAULT_BOX_PARAMS, ...tpl.params });
+    setParams({
+      ...DEFAULT_BOX_PARAMS,
+      ...tpl.params,
+      doubleFrontBaffle: false,
+    });
   };
 
-  const handleSaveCustomDriver = (driver: DriverPreset) => {
+  const handleSaveCustomDriver = (
+    driver: DriverPreset,
+    applyToProjectToo = true,
+    coilWiringOverride?: CoilWiringMode,
+  ) => {
+    const normalized = normalizeCustomDriver(driver);
     setCustomDrivers((prev) => {
-      const idx = prev.findIndex((d) => d.id === driver.id);
+      const idx = prev.findIndex((d) => d.id === normalized.id);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = { ...driver, isCustom: true };
+        next[idx] = normalized;
         return next;
       }
-      return [...prev, { ...driver, isCustom: true }];
+      return [...prev, normalized];
     });
+
+    if (applyToProjectToo || params.driverPresetId === normalized.id) {
+      handlePatch(driverPresetToBoxPatch(normalized, coilWiringOverride));
+    }
   };
 
   const handleDeleteCustomDriver = (driverId: string) => {
     setCustomDrivers((prev) => prev.filter((d) => d.id !== driverId));
+    if (params.driverPresetId === driverId) {
+      handlePatch(driverPresetToBoxPatch(DRIVER_PRESETS[0], 'series'));
+    }
   };
 
   const handleImportModel = (importedParams: BoxParams, customDriver?: DriverPreset) => {
+    let nextDrivers = customDrivers;
     if (customDriver) {
-      handleSaveCustomDriver(customDriver);
+      const normalized = normalizeCustomDriver(customDriver);
+      nextDrivers = customDrivers.some((d) => d.id === normalized.id)
+        ? customDrivers.map((d) => (d.id === normalized.id ? normalized : d))
+        : [...customDrivers, normalized];
+      setCustomDrivers(nextDrivers);
     }
-    setParams(importedParams);
+    setParams(migrateBoxParams(importedParams, nextDrivers));
+  };
+
+  const openDriverModal = (editTarget: DriverPreset | null, template?: DriverPreset) => {
+    setEditingDriver(editTarget);
+    setModalTemplateDriver(template ?? activeDriverPreset);
+    setDriverModalOpen(true);
   };
 
   const navItems: Array<{ id: ActiveView; label: string }> = [
@@ -141,9 +287,14 @@ export default function App() {
             e.preventDefault();
             setActiveView('3d');
           }}
-          className="font-display text-lg font-bold tracking-tight text-white whitespace-nowrap shrink-0"
+          aria-label="SubLab 3D — Strona główna"
+          className="flex items-center shrink-0 focus:outline-none"
         >
-          SubLab <span className="text-red-500">3D</span>
+          <img
+            src="./assets/sublab3d-logo-wide.png"
+            alt="SubLab 3D — Precision Bass Management"
+            className="h-9 sm:h-10 w-auto object-contain select-none"
+          />
         </a>
 
         <nav aria-label="Główna nawigacja widoku" className="flex items-center gap-4 sm:gap-6 overflow-x-auto">
@@ -186,6 +337,7 @@ export default function App() {
           onApplyTemplate={handleApplyTemplate}
           onSaveCustomDriver={handleSaveCustomDriver}
           onDeleteCustomDriver={handleDeleteCustomDriver}
+          onOpenDriverModal={openDriverModal}
         />
 
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -198,28 +350,12 @@ export default function App() {
               params={params}
               customDrivers={customDrivers}
               onApplyParams={handlePatch}
-              onSaveCustomDriver={(driver, applyToProjectToo) => {
-                handleSaveCustomDriver(driver);
-                if (applyToProjectToo) {
-                  handlePatch({
-                    driverPresetId: driver.id,
-                    driverName: driver.name,
-                    driverCutoutDia: driver.cutoutDia,
-                    driverOuterDia: driver.outerDia,
-                    driverDepth: driver.depth,
-                    driverDisplacement: driver.displacement,
-                    driverFs: driver.fs,
-                    driverQts: driver.qts,
-                    driverVas: driver.vas,
-                    driverXmax: driver.xmax,
-                    driverPowerW: driver.powerW,
-                  });
-                }
-              }}
+              onSaveCustomDriver={handleSaveCustomDriver}
               onDeleteCustomDriver={handleDeleteCustomDriver}
+              onOpenDriverModal={openDriverModal}
               onImportDrivers={(drivers) => {
                 for (const d of drivers) {
-                  handleSaveCustomDriver(d);
+                  handleSaveCustomDriver(d, false);
                 }
               }}
             />
@@ -238,6 +374,16 @@ export default function App() {
         acoustics={acoustics}
         activeCustomDriver={activeCustomDriver}
         onImportModel={handleImportModel}
+      />
+
+      <DriverTsModal
+        open={driverModalOpen}
+        editingDriver={editingDriver}
+        initialTemplateDriver={modalTemplateDriver}
+        onClose={() => setDriverModalOpen(false)}
+        onSaveDriver={(driver, applyToProjectToo, coilWiring) =>
+          handleSaveCustomDriver(driver, applyToProjectToo, coilWiring)
+        }
       />
     </div>
   );

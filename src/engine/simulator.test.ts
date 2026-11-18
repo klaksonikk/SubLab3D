@@ -272,3 +272,37 @@ test('WSD Max SPL limits sub-Fb excursion, PEQ & Linkwitz Transform boost low-en
   assert.ok(metrics.sdCm2 > 300 && metrics.vdCm3 > 400 && metrics.spl1w1m > 82);
 });
 
+test('DVC coil wiring (parallel vs series) scales simulated electrical impedance cleanly', () => {
+  const parallelVar: ComparisonVariant = {
+    id: 'v-d2-par',
+    name: 'D2 Parallel',
+    color: '#ef4444',
+    visible: true,
+    enclosureType: 'vented_slot',
+    netVolumeL: 58,
+    tuningHz: 33,
+    portAreaCm2: 195,
+    driverPresetId: 'deaf-bonce-mf12r-d2',
+    driverCount: 1,
+    voiceCoilCount: 2,
+    coilNominalOhms: 2,
+    coilReOhms: 1.9,
+    coilWiring: 'parallel',
+    wiring: 'parallel',
+  };
+  const seriesVar: ComparisonVariant = {
+    ...parallelVar,
+    id: 'v-d2-ser',
+    name: 'D2 Series',
+    coilWiring: 'series',
+  };
+
+  const parRes = simulateEnclosureSeries(parallelVar, DEFAULT_BOX_PARAMS, BASE_SIGNAL);
+  const serRes = simulateEnclosureSeries(seriesVar, DEFAULT_BOX_PARAMS, BASE_SIGNAL);
+
+  // Series Re = 3.8 Ohm vs Parallel Re = 0.95 Ohm -> minZ scales ~4x
+  assert.ok(parRes.minImpedanceOhms >= 0.9 && parRes.minImpedanceOhms < 1.5);
+  assert.ok(serRes.minImpedanceOhms >= 3.6 && serRes.minImpedanceOhms < 5.0);
+  assert.ok(serRes.minImpedanceOhms > parRes.minImpedanceOhms * 3.5);
+});
+
