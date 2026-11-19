@@ -42,7 +42,7 @@
 
 ## Laboratorium WSD (Analiza T-S)
 
-Zakładka **WSD** umożliwia precyzyjną analizę i porównanie do **4 projektów jednocześnie**:
+Zakładka **WSD** umożliwia precyzyjną analizę i porównanie do **4 projektów jednocześnie** oraz jest możliwość importu plików .wdr z winisd:
 
 | Obszar | Funkcje |
 | :--- | :--- |
