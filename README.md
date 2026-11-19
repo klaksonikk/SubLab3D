@@ -3,7 +3,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Three.js](https://img.shields.io/badge/Three.js-CAD%203D-000000?logo=threedotjs&logoColor=white)
-**SubLab 3D** to zaawansowana aplikacja inżynierska do projektowania obudów car-audio i home-audio w 3D, symulacji akustycznej Thiele-Small (moduł **WSD**), generowania list cięcia oraz optymalizacji rozkroju płyt stolarskich 
+**SubLab 3D** to zaawansowana aplikacja inżynierska do projektowania obudów car-audio i home-audio w 3D, symulacji akustycznej Thiele-Small (moduł **WSD**), generowania list cięcia oraz optymalizacji rozkroju płyt stolarskich.
 
 ---
 
@@ -36,7 +36,7 @@
 - **Rozkrój na arkuszach** (m.in. `2500 × 1250 mm`) z wizualizacją wykorzystania materiału i odpadu.
 
 ### 3. Udostępnianie i pełny tryb offline
-- Zapis projektu i bazy własnych głośników w `localStorage`, eksport/import bazy przetworników `.json` (w trybie Electron natywne okno zapisu pliku) oraz udostępnianie konfiguracji jednym linkiem (`?model=...`).
+- Zapis projektu i bazy własnych głośników w `localStorage`, eksport/import bazy przetworników `.json` oraz udostępnianie konfiguracji jednym linkiem (`?model=...`).
 
 ---
 
@@ -72,7 +72,6 @@ Przykładowa obudowa szczelinowa (`680 × 380 mm`, płyta `18 mm`, `55.0 L netto
 
 ---
 
-
 ## Testy jednostkowe i weryfikacja
 
 Logika akustyczna, solver T-S, układanie płyt i symulator WSD są pokryte **27 testami jednostkowymi** (`node:test`):
@@ -92,13 +91,6 @@ npm run lint
 ## Architektura projektu
 
 ```text
-├── electron/
-│   ├── main.cjs                     # Główny proces Electron (tryb offline, zapis JSON)
-│   └── preload.cjs                  # Bezpieczny mostek IPC (window.sublabDesktop)
-├── public/
-│   └── .nojekyll                    # Obsługa zasobów na GitHub Pages
-├── .github/workflows/
-│   └── deploy-gh-pages.yml          # Automatyczny build i deploy na GitHub Pages
 └── src/
     ├── engine/
     │   ├── acoustics.ts             # Solver wymiarów, Helmholtz Fb, porty L/Aero, kolizje

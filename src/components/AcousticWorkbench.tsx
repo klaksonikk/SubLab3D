@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   ArrowRight,
+  CheckCircle2,
   Copy,
   Database,
   Download,
   Edit3,
   Eye,
   EyeOff,
+  FileUp,
   Gauge,
   Plus,
   RotateCcw,
@@ -41,6 +43,7 @@ import {
   driverPresetToSolverInput,
   solveThieleSmall,
 } from '../engine/tsSolver';
+import { parseWinIsdWdr } from '../engine/winisdWdr';
 import type {
   BoxParams,
   CoilWiringMode,
@@ -309,6 +312,7 @@ export function AcousticWorkbench({
   params,
   customDrivers = [],
   onApplyParams,
+  onSaveCustomDriver,
   onDeleteCustomDriver,
   onOpenDriverModal,
   onImportDrivers,
@@ -349,6 +353,14 @@ export function AcousticWorkbench({
   const oscRef = useRef<OscillatorNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const wdrFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [wdrImportStatus, setWdrImportStatus] = useState<{
+    type: 'success' | 'error';
+    title: string;
+    details: string;
+    warnings?: string[];
+    primaryDriver?: DriverPreset;
+  } | null>(null);
 
   useEffect(() => {
     if (!genEnabled) {
@@ -856,11 +868,117 @@ export function AcousticWorkbench({
     URL.revokeObjectURL(url);
   };
 
+  const importWdrFiles = async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList);
+    if (files.length === 0) return;
+
+    const successes: Array<{
+      driver: DriverPreset;
+      unitSystem: 'si' | 'practical';
+      warnings: string[];
+      fileName: string;
+    }> = [];
+    const errors: string[] = [];
+
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        const parsed = parseWinIsdWdr(text, file.name);
+        if (parsed.ok) {
+          successes.push({
+            driver: parsed.driver,
+            unitSystem: parsed.detectedUnitSystem,
+            warnings: parsed.warnings,
+            fileName: file.name,
+          });
+        } else {
+          errors.push(`${file.name}: ${parsed.error}`);
+        }
+      } catch {
+        errors.push(`${file.name}: Nie udało się odczytać pliku.`);
+      }
+    }
+
+    if (successes.length > 0) {
+      const first = successes[0];
+      const allImported = successes.map((s) => s.driver);
+
+      if (selectedVariant.isLiveProject) {
+        const firstWiring: CoilWiringMode =
+          first.driver.voiceCoilCount === 2 ? 'series' : 'single';
+        if (onSaveCustomDriver) {
+          onSaveCustomDriver(first.driver, true, firstWiring);
+          if (allImported.length > 1) {
+            onImportDrivers?.(allImported.slice(1));
+          }
+        } else {
+          onImportDrivers?.(allImported);
+          onApplyParams(presetToBoxAndCoilPatch(first.driver));
+        }
+      } else {
+        onImportDrivers?.(allImported);
+        const vc: VoiceCoilCount = first.driver.voiceCoilCount === 2 ? 2 : 1;
+        const coilNom =
+          first.driver.coilNominalOhms ??
+          (vc === 2 ? (first.driver.zNom ?? 4) / 2 : first.driver.zNom ?? 4);
+        const coilRe =
+          first.driver.coilReOhms ??
+          (vc === 2 ? (first.driver.re ?? coilNom * 1.6) / 2 : first.driver.re ?? 3.2);
+        const coilWiring: CoilWiringMode = vc === 2 ? 'series' : 'single';
+        setCustomVariants((prev) =>
+          prev.map((v) =>
+            v.id === selectedVariant.id
+              ? {
+                  ...v,
+                  driverPresetId: first.driver.id,
+                  voiceCoilCount: vc,
+                  coilNominalOhms: coilNom,
+                  coilReOhms: coilRe,
+                  coilWiring,
+                }
+              : v,
+          ),
+        );
+      }
+
+      const unitLabel =
+        first.unitSystem === 'si' ? 'WinISD Pro SI' : 'Jednostki praktyczne';
+      setWdrImportStatus({
+        type: 'success',
+        title:
+          successes.length === 1
+            ? `Zaimportowano z WinISD (.wdr): ${first.driver.name}`
+            : `Zaimportowano ${successes.length} głośników WinISD (.wdr)`,
+        details: `${unitLabel} · Fs ${first.driver.fs} Hz · Qts ${first.driver.qts.toFixed(3)} · Vas ${first.driver.vas} L · Xmax ${first.driver.xmax} mm · ${first.driver.powerW} W RMS`,
+        warnings: [...first.warnings, ...errors],
+        primaryDriver: first.driver,
+      });
+    } else if (errors.length > 0) {
+      setWdrImportStatus({
+        type: 'error',
+        title: 'Błąd importu pliku WinISD (.wdr)',
+        details: errors.join(' | '),
+      });
+    }
+  };
+
+  const handleImportWdrChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      await importWdrFiles(e.target.files);
+    }
+    e.target.value = '';
+  };
+
   const handleImportOfflineJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
       const text = await file.text();
+      if (/\.wdr(\.txt)?$/i.test(file.name) || /^\s*\[Driver\]/im.test(text)) {
+        await importWdrFiles([file]);
+        e.target.value = '';
+        return;
+      }
       const parsed = JSON.parse(text) as {
         customDrivers?: DriverPreset[];
         variants?: ComparisonVariant[];
@@ -872,7 +990,11 @@ export function AcousticWorkbench({
         setCustomVariants(parsed.variants.slice(0, 3));
       }
     } catch {
-      // Ignore malformed JSON
+      setWdrImportStatus({
+        type: 'error',
+        title: 'Nie udało się zaimportować pliku',
+        details: 'Obsługiwane formaty to baza .json oraz pliki głośników WinISD .wdr.',
+      });
     }
     e.target.value = '';
   };
@@ -1057,6 +1179,27 @@ export function AcousticWorkbench({
             <span>Dodaj własny głośnik</span>
           </button>
 
+          {/* WinISD .wdr Import */}
+          <button
+            type="button"
+            data-testid="wsd-import-wdr-btn"
+            onClick={() => wdrFileInputRef.current?.click()}
+            title="Importuj parametry głośnika T-S z pliku WinISD (.wdr)"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-cyan-200 bg-[#161920] border border-cyan-500/35 rounded hover:bg-cyan-500/10 hover:text-white transition-colors"
+          >
+            <FileUp className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Import .wdr</span>
+          </button>
+          <input
+            ref={wdrFileInputRef}
+            data-testid="wsd-import-wdr-input"
+            type="file"
+            multiple
+            accept=".wdr,.txt"
+            className="hidden"
+            onChange={handleImportWdrChange}
+          />
+
           {/* Offline JSON Export/Import */}
           <button
             type="button"
@@ -1070,7 +1213,7 @@ export function AcousticWorkbench({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            title="Importuj bazę głośników (.json)"
+            title="Importuj bazę głośników (.json) lub plik WinISD (.wdr)"
             className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-zinc-300 bg-[#161920] border border-white/[0.1] rounded hover:text-white transition-colors"
           >
             <Upload className="w-3.5 h-3.5 text-zinc-400" />
@@ -1079,7 +1222,7 @@ export function AcousticWorkbench({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,application/json"
+            accept=".json,.wdr,.txt,application/json"
             className="hidden"
             onChange={handleImportOfflineJson}
           />
@@ -1107,6 +1250,61 @@ export function AcousticWorkbench({
           </div>
         </div>
       </div>
+
+      {/* WinISD .wdr Import Status Banner */}
+      {wdrImportStatus && (
+        <div
+          data-testid="wsd-wdr-status"
+          className={`rounded-lg border px-3.5 py-2.5 text-xs flex flex-wrap items-start justify-between gap-3 ${
+            wdrImportStatus.type === 'success'
+              ? 'bg-cyan-500/10 border-cyan-500/35 text-cyan-100'
+              : 'bg-rose-500/10 border-rose-500/35 text-rose-200'
+          }`}
+        >
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2 font-semibold">
+              {wdrImportStatus.type === 'success' && (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              )}
+              <span>{wdrImportStatus.title}</span>
+            </div>
+            <div className="text-[11px] font-mono-num text-zinc-300">
+              {wdrImportStatus.details}
+            </div>
+            {wdrImportStatus.warnings && wdrImportStatus.warnings.length > 0 && (
+              <div className="text-[11px] text-amber-300 space-y-0.5 pt-0.5">
+                {wdrImportStatus.warnings.map((w, idx) => (
+                  <div key={idx}>• {w}</div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {wdrImportStatus.primaryDriver && (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenDriverModal?.(
+                    wdrImportStatus.primaryDriver!,
+                    wdrImportStatus.primaryDriver!,
+                  )
+                }
+                className="px-2.5 py-1 rounded bg-[#08090C] border border-cyan-500/40 text-[11px] text-cyan-300 hover:bg-cyan-500/15 transition-colors"
+              >
+                Edytuj T-S / Montaż CAD
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setWdrImportStatus(null)}
+              aria-label="Zamknij komunikat importu .wdr"
+              className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06]"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Split: Projects & Generator Rail + Graph */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
@@ -1732,6 +1930,15 @@ export function AcousticWorkbench({
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Nowy głośnik</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => wdrFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded bg-[#161920] border border-cyan-500/35 text-cyan-300 hover:bg-cyan-500/10 transition-colors"
+                    >
+                      <FileUp className="w-3.5 h-3.5" />
+                      <span>Importuj .wdr</span>
                     </button>
 
                     <button

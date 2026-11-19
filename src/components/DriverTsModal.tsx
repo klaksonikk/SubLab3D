@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Cpu, RotateCcw, Save, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Cpu,
+  FileUp,
+  RotateCcw,
+  Save,
+  X,
+} from 'lucide-react';
 import {
   buildCustomDriverPreset,
   computeElectricalLoad,
@@ -11,6 +19,11 @@ import {
   type SdInputMode,
   type TsSolverInput,
 } from '../engine/tsSolver';
+import {
+  parseWinIsdWdr,
+  type WdrUnitPreference,
+  type WdrUnitSystem,
+} from '../engine/winisdWdr';
 import type { CoilWiringMode, DriverPreset, VoiceCoilCount } from '../engine/types';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
@@ -68,6 +81,15 @@ export function DriverTsModal({
   const [displacement, setDisplacement] = useState(2.8);
   const [applyToProjectToo, setApplyToProjectToo] = useState(true);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [wdrState, setWdrState] = useState<{
+    fileName: string;
+    rawContent: string;
+    detectedUnitSystem: WdrUnitSystem;
+    unitPreference: WdrUnitPreference;
+    warnings: string[];
+  } | null>(null);
+  const [wdrError, setWdrError] = useState<string | null>(null);
+  const wdrInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -89,7 +111,51 @@ export function DriverTsModal({
     setDepth(src.depth);
     setDisplacement(src.displacement);
     setNameError(null);
+    setWdrState(null);
+    setWdrError(null);
   }, [open, editingDriver, initialTemplateDriver]);
+
+  const applyParsedWdr = (
+    rawContent: string,
+    fileName: string,
+    unitPreference: WdrUnitPreference,
+  ) => {
+    const parsed = parseWinIsdWdr(rawContent, fileName, unitPreference);
+    if (!parsed.ok) {
+      setWdrError(parsed.error);
+      setWdrState(null);
+      return;
+    }
+    setWdrError(null);
+    setBrand(parsed.brand);
+    setModel(parsed.model);
+    setSizeLabel(parsed.sizeLabel);
+    setSolverInput(parsed.solverInput);
+    setCutoutDia(parsed.mounting.cutoutDia);
+    setOuterDia(parsed.mounting.outerDia);
+    setDepth(parsed.mounting.depth);
+    setDisplacement(parsed.mounting.displacement);
+    setNameError(null);
+    setWdrState({
+      fileName,
+      rawContent,
+      detectedUnitSystem: parsed.detectedUnitSystem,
+      unitPreference,
+      warnings: parsed.warnings,
+    });
+  };
+
+  const handleWdrFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      applyParsedWdr(text, file.name, 'auto');
+    } catch {
+      setWdrError('Nie udało się odczytać wybranego pliku .wdr.');
+    }
+    e.target.value = '';
+  };
 
   const solved = useMemo(() => solveThieleSmall(solverInput), [solverInput]);
   const coilLoad = useMemo(
@@ -248,18 +314,90 @@ export function DriverTsModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Zamknij edytor głośnika"
-            className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="modal-import-wdr-btn"
+              onClick={() => wdrInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded bg-[#161920] border border-cyan-500/35 text-cyan-300 hover:bg-cyan-500/10 transition-colors"
+            >
+              <FileUp className="w-3.5 h-3.5" />
+              <span>Wczytaj .wdr (WinISD)</span>
+            </button>
+            <input
+              ref={wdrInputRef}
+              data-testid="modal-import-wdr-input"
+              type="file"
+              accept=".wdr,.txt"
+              className="hidden"
+              onChange={handleWdrFileChange}
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Zamknij edytor głośnika"
+              className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body */}
         <form noValidate onSubmit={handleSave} className="flex-1 overflow-y-auto cad-scroll p-5 space-y-5">
+          {wdrError && (
+            <div className="bg-rose-500/10 border border-rose-500/30 rounded-md px-3 py-2 text-xs text-rose-300 flex items-center justify-between gap-2">
+              <span>{wdrError}</span>
+              <button
+                type="button"
+                onClick={() => setWdrError(null)}
+                aria-label="Zamknij komunikat błędu .wdr"
+                className="text-rose-300 hover:text-white"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {wdrState && (
+            <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-md px-3 py-2.5 text-xs space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-cyan-200">
+                  Wczytano z WinISD: <strong className="text-white">{wdrState.fileName}</strong> ·{' '}
+                  <span className="font-mono-num">
+                    Jednostki:{' '}
+                    {wdrState.detectedUnitSystem === 'si'
+                      ? 'WinISD Pro SI (m³, m², kg, m)'
+                      : 'Praktyczne (L, cm², g, mm)'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    applyParsedWdr(
+                      wdrState.rawContent,
+                      wdrState.fileName,
+                      wdrState.detectedUnitSystem === 'si' ? 'practical' : 'si',
+                    )
+                  }
+                  className="px-2 py-1 rounded bg-[#08090C] border border-cyan-500/40 text-[11px] text-cyan-300 hover:bg-cyan-500/15 transition-colors"
+                >
+                  Przełącz na{' '}
+                  {wdrState.detectedUnitSystem === 'si'
+                    ? 'L / cm² / g / mm'
+                    : 'SI (m³ / m² / kg / m)'}
+                </button>
+              </div>
+              {wdrState.warnings.length > 0 && (
+                <div className="text-[11px] text-amber-300 space-y-0.5">
+                  {wdrState.warnings.map((w, i) => (
+                    <div key={i}>• {w}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Identity & Size Row */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-[#161920] border border-white/[0.08] rounded-md p-3.5">
             <label className="sm:col-span-4 space-y-1">
