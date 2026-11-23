@@ -60,60 +60,73 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
       ? curve.reduce((best, pt) => (Math.abs(pt.hz - hoverHz) < Math.abs(best.hz - hoverHz) ? pt : best), curve[0])
       : null;
 
+  const updateHoverFromClientX = (svgEl: SVGSVGElement, clientX: number) => {
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((clientX - rect.left) / rect.width) * W;
+    const norm = Math.max(0, Math.min(1, (relX - padL) / plotW));
+    const hz = Math.pow(10, Math.log10(minHz) + norm * (Math.log10(maxHz) - Math.log10(minHz)));
+    setHoverHz(Math.round(hz));
+  };
+
   return (
-    <div className="flex-1 overflow-y-auto cad-scroll p-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex-1 overflow-y-auto cad-scroll p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Charakterystyka przenoszenia i dynamika portu</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-white">Charakterystyka przenoszenia i dynamika portu</h2>
           <p className="text-xs text-zinc-400 mt-0.5">
             Symulacja Thiele-Small (15–150 Hz) · Głośnik Fs {params.driverFs} Hz · Qts {params.driverQts} · Vas{' '}
             {params.driverVas} L
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-[#161920] border border-white/10 rounded-md" role="group" aria-label="Tryb wykresu">
+        <div className="w-full sm:w-auto grid grid-cols-3 sm:flex items-center gap-1 p-1 bg-[#161920] border border-white/10 rounded-md" role="group" aria-label="Tryb wykresu">
           <button
             type="button"
             onClick={() => setChartMode('spl')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+            className={`px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-medium rounded transition-colors text-center sm:whitespace-nowrap ${
               chartMode === 'spl' ? 'bg-red-600 text-white' : 'text-zinc-300 hover:text-white'
             }`}
           >
-            Krzywa SPL (dB)
+            <span className="sm:hidden">SPL (dB)</span>
+            <span className="hidden sm:inline">Krzywa SPL (dB)</span>
           </button>
           <button
             type="button"
             onClick={() => setChartMode('velocity')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+            className={`px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-medium rounded transition-colors text-center sm:whitespace-nowrap ${
               chartMode === 'velocity' ? 'bg-red-600 text-white' : 'text-zinc-300 hover:text-white'
             }`}
           >
-            Prędkość w porcie (m/s)
+            <span className="sm:hidden">Port (m/s)</span>
+            <span className="hidden sm:inline">Prędkość w porcie (m/s)</span>
           </button>
           <button
             type="button"
             onClick={() => setChartMode('excursion')}
-            className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+            className={`px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-medium rounded transition-colors text-center sm:whitespace-nowrap ${
               chartMode === 'excursion' ? 'bg-red-600 text-white' : 'text-zinc-300 hover:text-white'
             }`}
           >
-            Wychył membrany (mm)
+            <span className="sm:hidden">Wychył (mm)</span>
+            <span className="hidden sm:inline">Wychył membrany (mm)</span>
           </button>
         </div>
       </div>
 
       {/* Main SVG Plot */}
-      <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4">
+      <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-2.5 sm:p-4">
         <svg
           viewBox={`0 0 ${W} ${H}`}
-          className="w-full h-auto select-none"
+          className="w-full h-auto select-none touch-pan-y"
           onMouseLeave={() => setHoverHz(null)}
-          onMouseMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const relX = ((e.clientX - rect.left) / rect.width) * W;
-            const norm = Math.max(0, Math.min(1, (relX - padL) / plotW));
-            const hz = Math.pow(10, Math.log10(minHz) + norm * (Math.log10(maxHz) - Math.log10(minHz)));
-            setHoverHz(Math.round(hz));
+          onMouseMove={(e) => updateHoverFromClientX(e.currentTarget, e.clientX)}
+          onTouchStart={(e) => {
+            const t = e.touches[0];
+            if (t) updateHoverFromClientX(e.currentTarget, t.clientX);
+          }}
+          onTouchMove={(e) => {
+            const t = e.touches[0];
+            if (t) updateHoverFromClientX(e.currentTarget, t.clientX);
           }}
         >
           <defs>
@@ -254,11 +267,11 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
         </svg>
 
         {/* Crosshair Readout Footer */}
-        <div className="mt-3 pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex items-center gap-5 font-mono-num">
+        <div className="mt-3 pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono-num">
             <span className="text-zinc-400">
               Częstotliwość:{' '}
-              <strong className="text-white">{hoveredPoint ? `${hoveredPoint.hz} Hz` : 'Najedź na wykres'}</strong>
+              <strong className="text-white">{hoveredPoint ? `${hoveredPoint.hz} Hz` : 'Dotknij wykres'}</strong>
             </span>
             {hoveredPoint && (
               <>

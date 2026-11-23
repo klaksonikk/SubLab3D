@@ -35,21 +35,21 @@ export function CutListView({ params, summary }: CutListViewProps) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto cad-scroll p-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex-1 overflow-y-auto cad-scroll p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Lista cięcia formatek (Cut-List)</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-white">Lista cięcia formatek (Cut-List)</h2>
           <p className="text-xs text-zinc-400 mt-0.5">
             Połączenie: {joineryLabels[params.joineryType]} · Grubość płyty: {params.thickness} mm · Łączna powierzchnia:{' '}
             <span className="font-mono-num text-zinc-200">{summary.totalPanelAreaM2.toFixed(2)} m²</span>
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-zinc-200 bg-[#161920] border border-white/15 rounded-md hover:bg-white/5 transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 text-xs font-medium text-zinc-200 bg-[#161920] border border-white/15 rounded-md hover:bg-white/5 transition-colors whitespace-nowrap"
           >
             <Printer className="w-3.5 h-3.5" />
             <span>Drukuj</span>
@@ -57,7 +57,7 @@ export function CutListView({ params, summary }: CutListViewProps) {
           <button
             type="button"
             onClick={handleDownloadCsv}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Eksportuj CSV</span>
@@ -71,27 +71,33 @@ export function CutListView({ params, summary }: CutListViewProps) {
           <table className="w-full text-left border-collapse" data-testid="cutlist-table">
             <thead>
               <tr className="border-b border-white/[0.08] bg-[#0B0D11] text-[11px] font-medium text-zinc-400">
-                <th className="py-3 px-4">Nazwa elementu</th>
-                <th className="py-3 px-4 text-right">Szt.</th>
-                <th className="py-3 px-4 text-right">Wymiar A (mm)</th>
-                <th className="py-3 px-4 text-right">Wymiar B (mm)</th>
-                <th className="py-3 px-4 text-right">Grubość</th>
-                <th className="py-3 px-4 text-right">Pow. (m²)</th>
-                <th className="py-3 px-4">Obróbka / Wycięcia</th>
+                <th className="py-2.5 px-2.5 sm:py-3 sm:px-4">Nazwa elementu</th>
+                <th className="py-2.5 px-1.5 sm:py-3 sm:px-4 text-right whitespace-nowrap">Szt.</th>
+                <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">
+                  <span className="sm:hidden">A (mm)</span>
+                  <span className="hidden sm:inline">Wymiar A (mm)</span>
+                </th>
+                <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">
+                  <span className="sm:hidden">B (mm)</span>
+                  <span className="hidden sm:inline">Wymiar B (mm)</span>
+                </th>
+                <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">Gr.</th>
+                <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">Pow. (m²)</th>
+                <th className="py-2.5 px-2.5 sm:py-3 sm:px-4 whitespace-nowrap">Obróbka / Wycięcia</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.06] text-xs">
               {summary.panels.map((panel) => (
                 <tr key={panel.id} className="hover:bg-white/[0.02] transition-colors">
-                  <td className="py-3 px-4 font-medium text-white">{panel.name}</td>
-                  <td className="py-3 px-4 text-right font-mono-num text-red-400 font-semibold">
+                  <td className="py-2.5 px-2.5 sm:py-3 sm:px-4 font-medium text-white min-w-[120px] sm:whitespace-nowrap">{panel.name}</td>
+                  <td className="py-2.5 px-1.5 sm:py-3 sm:px-4 text-right font-mono-num text-red-400 font-semibold whitespace-nowrap">
                     {panel.quantity}×
                   </td>
-                  <td className="py-3 px-4 text-right font-mono-num text-white">{panel.width}</td>
-                  <td className="py-3 px-4 text-right font-mono-num text-white">{panel.height}</td>
-                  <td className="py-3 px-4 text-right font-mono-num text-zinc-400">{panel.thickness} mm</td>
-                  <td className="py-3 px-4 text-right font-mono-num text-zinc-300">{panel.areaM2.toFixed(3)}</td>
-                  <td className="py-3 px-4 text-zinc-400">{panel.notes}</td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-white whitespace-nowrap">{panel.width}</td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-white whitespace-nowrap">{panel.height}</td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-zinc-400 whitespace-nowrap">{panel.thickness} mm</td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-zinc-300 whitespace-nowrap">{panel.areaM2.toFixed(3)}</td>
+                  <td className="py-2.5 px-2.5 sm:py-3 sm:px-4 text-zinc-400 min-w-[180px]">{panel.notes}</td>
                 </tr>
               ))}
             </tbody>

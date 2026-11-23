@@ -20,10 +20,10 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
   };
 
   return (
-    <div className="flex-1 overflow-y-auto cad-scroll p-6 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex-1 overflow-y-auto cad-scroll p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Optymalizacja rozkroju arkusza (2D Nesting)</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-white">Optymalizacja rozkroju arkusza (2D Nesting)</h2>
           <p className="text-xs text-zinc-400 mt-0.5">
             Wykorzystanie płyty:{' '}
             <strong className="font-mono-num text-red-400">{summary.utilizationPercent.toFixed(1)}%</strong> ·
@@ -32,8 +32,8 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div>
+        <div className="w-full sm:w-auto flex flex-wrap items-center gap-2.5 sm:gap-3">
+          <div className="w-full sm:w-auto">
             <label htmlFor="sheet-format" className="sr-only">
               Format arkusza
             </label>
@@ -44,7 +44,7 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
                 const [w, h] = e.target.value.split('x').map(Number);
                 onChange({ sheetWidth: w, sheetHeight: h });
               }}
-              className="bg-[#161920] border border-white/15 rounded-md px-3 py-1.5 text-xs text-white font-mono-num focus:outline-none focus:border-red-500"
+              className="w-full sm:w-auto bg-[#161920] border border-white/15 rounded-md px-3 py-1.5 text-xs text-white font-mono-num focus:outline-none focus:border-red-500"
             >
               <option value="2500x1250">Arkusz 2500 × 1250 mm (Sklejka)</option>
               <option value="2440x1220">Arkusz 2440 × 1220 mm (MDF std)</option>

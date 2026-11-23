@@ -33,7 +33,9 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
   const [showEdges, setShowEdges] = useState<boolean>(true);
   const [showGrid, setShowGrid] = useState<boolean>(true);
   const [activePreset, setActivePreset] = useState<CameraPresetKey>('iso');
-  const [dockCollapsed, setDockCollapsed] = useState<boolean>(false);
+  const [dockCollapsed, setDockCollapsed] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false,
+  );
   const [contextLost, setContextLost] = useState<boolean>(false);
 
   // Refs synced into the WebGL engine without tearing down the renderer
@@ -445,7 +447,7 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
   };
 
   return (
-    <div className="relative flex-1 w-full h-full min-h-[420px] bg-[#0A0B0E] overflow-hidden select-none">
+    <div className="relative w-full h-[50vh] min-h-[320px] max-h-[540px] lg:max-h-none lg:flex-1 lg:h-full bg-[#0A0B0E] overflow-hidden select-none">
       {/* Isolated WebGL mount container */}
       <div
         ref={mountRef}
@@ -466,28 +468,24 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
       )}
 
       {/* Subtle corner dimension summary (clean unboxed text, top-left) */}
-      <div className="pointer-events-none absolute top-4 left-4 z-10 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
+      <div className="pointer-events-none absolute top-2.5 left-3 right-3 sm:top-4 sm:left-4 sm:right-auto z-10 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] sm:text-xs text-zinc-400">
         <span className="font-mono-num text-zinc-200">
           {Math.round(acoustics.effectiveExternalWidth)} × {Math.round(acoustics.effectiveExternalHeight)} × {Math.round(acoustics.effectiveExternalDepth)} mm
         </span>
-        <span aria-hidden="true">·</span>
-        <span>Płyta {params.thickness} mm</span>
+        <span className="whitespace-nowrap">· Płyta {params.thickness} mm</span>
         {acoustics.slotPort?.isBent && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="text-red-400">
-              Port zagięty L ({Math.round(acoustics.slotPort.baffle1Length)}+{Math.round(acoustics.slotPort.baffle2Length)} mm)
-            </span>
-          </>
+          <span className="text-red-400 whitespace-nowrap">
+            · Port zagięty L ({Math.round(acoustics.slotPort.baffle1Length)}+{Math.round(acoustics.slotPort.baffle2Length)} mm)
+          </span>
         )}
       </div>
 
       {/* Unified Collapsible Bottom Control Dock */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-[min(900px,calc(100%-2rem))] flex flex-col items-center">
+      <div className="absolute bottom-2.5 sm:bottom-4 left-1/2 -translate-x-1/2 z-10 w-[calc(100%-1rem)] sm:w-[min(900px,calc(100%-2rem))] flex flex-col items-center">
         <button
           type="button"
           onClick={() => setDockCollapsed((v) => !v)}
-          className="mb-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-t-md bg-[#14161D] border border-b-0 border-white/10 text-[11px] font-medium text-zinc-300 hover:text-white transition-colors whitespace-nowrap shrink-0"
+          className="mb-1 sm:mb-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-t-md bg-[#14161D]/95 border border-b-0 border-white/10 text-[11px] font-medium text-zinc-300 hover:text-white transition-colors whitespace-nowrap shrink-0"
           aria-expanded={!dockCollapsed}
         >
           {dockCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -495,15 +493,15 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
         </button>
 
         {!dockCollapsed && (
-          <div className="w-full bg-[#13151C]/95 border border-white/10 rounded-lg px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-5 gap-y-2.5 shadow-xl">
+          <div className="w-full bg-[#13151C]/95 border border-white/10 rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-x-4 sm:gap-x-5 gap-y-2 shadow-xl">
             {/* Camera Presets */}
-            <div className="flex items-center gap-1" role="group" aria-label="Widoki kamery">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full" role="group" aria-label="Widoki kamery">
               {(Object.keys(CAMERA_PRESETS) as CameraPresetKey[]).map((key) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => handlePresetClick(key)}
-                  className={`px-2.5 py-1 text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
+                  className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-medium rounded transition-colors whitespace-nowrap shrink-0 ${
                     activePreset === key
                       ? 'bg-red-600 text-white'
                       : 'text-zinc-300 hover:bg-white/5 hover:text-white'

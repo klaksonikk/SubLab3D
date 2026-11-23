@@ -103,10 +103,10 @@ export function ShareModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="share-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-4"
     >
-      <div className="w-full max-w-lg bg-[#111318] border border-white/15 rounded-lg shadow-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/[0.08] flex items-center justify-between">
+      <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-[#111318] border border-white/15 rounded-lg shadow-2xl">
+        <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/[0.08] flex items-center justify-between">
           <h2 id="share-modal-title" className="text-base font-semibold text-white">
             Udostępnij lub wczytaj model
           </h2>
@@ -120,7 +120,7 @@ export function ShareModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-4 sm:p-5 space-y-5">
           {/* Shareable Link */}
           <div className="space-y-2">
             <label htmlFor="share-url-input" className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
@@ -130,19 +130,19 @@ export function ShareModal({
             <p className="text-xs text-zinc-400">
               Link zawiera pełne wymiary obudowy, strojenie portów oraz parametry wybranego przetwornika.
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 id="share-url-input"
                 type="text"
                 readOnly
                 value={shareUrl}
                 onFocus={(e) => e.target.select()}
-                className="flex-1 bg-[#08090C] border border-white/15 rounded-md px-3 py-2 font-mono-num text-xs text-zinc-300 focus:outline-none focus:border-red-500"
+                className="flex-1 min-w-0 bg-[#08090C] border border-white/15 rounded-md px-3 py-2 font-mono-num text-xs text-zinc-300 focus:outline-none focus:border-red-500"
               />
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? 'Skopiowano' : 'Kopiuj link'}</span>

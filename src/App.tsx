@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Share2 } from 'lucide-react';
+import { Share2, Sliders } from 'lucide-react';
 import { calculateAcoustics } from './engine/acoustics';
 import { generateCutList, optimizeCutSheet } from './engine/cutlist';
 import {
@@ -164,11 +164,21 @@ export default function App() {
   const [customDrivers, setCustomDrivers] = useState<DriverPreset[]>(initial.customDrivers);
   const [activeView, setActiveView] = useState<ActiveView>('3d');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [mobileParamsOpen, setMobileParamsOpen] = useState(false);
 
   // Shared Driver T-S Modal accessible from both Sidebar and WSD
   const [driverModalOpen, setDriverModalOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState<DriverPreset | null>(null);
   const [modalTemplateDriver, setModalTemplateDriver] = useState<DriverPreset>(DRIVER_PRESETS[0]);
+
+  useEffect(() => {
+    if (!mobileParamsOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileParamsOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobileParamsOpen]);
 
   useEffect(() => {
     try {
@@ -269,78 +279,138 @@ export default function App() {
     setDriverModalOpen(true);
   };
 
-  const navItems: Array<{ id: ActiveView; label: string }> = [
-    { id: '3d', label: 'Projekt 3D' },
-    { id: 'chart', label: 'Charakterystyka SPL' },
-    { id: 'workbench', label: 'WSD' },
-    { id: 'cutlist', label: 'Lista Cięcia' },
-    { id: 'nesting', label: 'Rozkrój Płyty' },
+  const navItems: Array<{ id: ActiveView; label: string; shortLabel: string }> = [
+    { id: '3d', label: 'Projekt 3D', shortLabel: 'Projekt 3D' },
+    { id: 'chart', label: 'Charakterystyka SPL', shortLabel: 'Wykres SPL' },
+    { id: 'workbench', label: 'WSD', shortLabel: 'WSD' },
+    { id: 'cutlist', label: 'Lista Cięcia', shortLabel: 'Lista Cięcia' },
+    { id: 'nesting', label: 'Rozkrój Płyty', shortLabel: 'Rozkrój' },
   ];
 
   return (
-    <div className="min-h-screen lg:h-screen flex flex-col bg-[#0A0B0E] text-[#F4F4F5] overflow-x-hidden lg:overflow-hidden">
-      {/* Top Bar Contract: 3 zones */}
-      <header className="h-14 shrink-0 bg-[#111318] border-b border-white/[0.08] px-4 sm:px-6 flex items-center justify-between gap-4 sm:gap-8">
-        <a
-          href="#top"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveView('3d');
-          }}
-          aria-label="SubLab 3D — Strona główna"
-          className="flex items-center shrink-0 focus:outline-none"
-        >
-          <img
-            src="./assets/sublab3d-logo-wide.png"
-            alt="SubLab 3D — Precision Bass Management"
-            className="h-9 sm:h-10 w-auto object-contain select-none"
-          />
-        </a>
+    <div className="min-h-screen lg:h-screen flex flex-col bg-[#0A0B0E] text-[#F4F4F5] overflow-x-clip lg:overflow-hidden">
+      {/* Top Bar: single row on lg+, two compact sticky rows on mobile/tablet */}
+      <header className="sticky top-0 z-30 lg:static shrink-0 bg-[#111318] border-b border-white/[0.08]">
+        <div className="h-13 lg:h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-6">
+          <a
+            href="#top"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveView('3d');
+            }}
+            aria-label="SubLab 3D — Strona główna"
+            className="flex items-center shrink-0 focus:outline-none"
+          >
+            <img
+              src="./assets/sublab3d-logo-wide.png"
+              alt="SubLab 3D — Precision Bass Management"
+              className="h-7 sm:h-9 lg:h-10 w-auto object-contain select-none"
+            />
+          </a>
 
-        <nav aria-label="Główna nawigacja widoku" className="flex items-center gap-4 sm:gap-6 overflow-x-auto">
+          <nav
+            aria-label="Główna nawigacja widoku"
+            className="hidden lg:flex items-center gap-6 overflow-x-auto"
+          >
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveView(item.id)}
+                aria-current={activeView === item.id ? 'page' : undefined}
+                className={`py-1 text-sm font-medium transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+                  activeView === item.id
+                    ? 'text-red-400 border-red-500'
+                    : 'text-zinc-400 border-transparent hover:text-white'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="shrink-0 flex items-center gap-2">
+            <button
+              type="button"
+              data-testid="mobile-params-toggle"
+              onClick={() => setMobileParamsOpen(true)}
+              aria-expanded={mobileParamsOpen}
+              className="lg:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-100 bg-[#161920] border border-white/[0.14] rounded-md hover:bg-white/[0.08] transition-colors whitespace-nowrap shrink-0"
+            >
+              <Sliders className="w-3.5 h-3.5 text-red-400" />
+              <span>Parametry</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShareModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="sm:hidden">Udostępnij</span>
+              <span className="hidden sm:inline">Udostępnij model</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile / Tablet View Navigation Bar */}
+        <nav
+          aria-label="Nawigacja mobilna widoku"
+          className="lg:hidden border-t border-white/[0.06] px-2 flex items-center justify-between sm:justify-start sm:gap-4 overflow-x-auto no-scrollbar"
+        >
           {navItems.map((item) => (
             <button
-              key={item.id}
+              key={`mob-${item.id}`}
               type="button"
-              onClick={() => setActiveView(item.id)}
+              onClick={() => {
+                setActiveView(item.id);
+                setMobileParamsOpen(false);
+              }}
               aria-current={activeView === item.id ? 'page' : undefined}
-              className={`py-1 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 border-b-2 ${
+              className={`py-2.5 px-2 text-xs font-medium transition-colors whitespace-nowrap shrink-0 border-b-2 ${
                 activeView === item.id
                   ? 'text-red-400 border-red-500'
                   : 'text-zinc-400 border-transparent hover:text-white'
               }`}
             >
-              {item.label}
+              {item.shortLabel}
             </button>
           ))}
         </nav>
-
-        <div className="shrink-0 flex items-center">
-          <button
-            type="button"
-            onClick={() => setShareModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span>Udostępnij model</span>
-          </button>
-        </div>
       </header>
 
       {/* Main CAD Split Workspace */}
       <main className="flex-1 flex flex-col lg:flex-row min-h-0">
-        <SidebarControls
-          params={params}
-          acoustics={acoustics}
-          customDrivers={customDrivers}
-          onChange={handlePatch}
-          onApplyTemplate={handleApplyTemplate}
-          onSaveCustomDriver={handleSaveCustomDriver}
-          onDeleteCustomDriver={handleDeleteCustomDriver}
-          onOpenDriverModal={openDriverModal}
-        />
+        {/* Single SidebarControls instance: mobile drawer when open, below 3D viewport on <lg 3d view, or left rail on lg+ */}
+        <div
+          className={
+            mobileParamsOpen
+              ? 'fixed inset-0 z-40 flex bg-black/75 backdrop-blur-[1px] lg:static lg:inset-auto lg:z-auto lg:bg-transparent lg:backdrop-blur-none'
+              : activeView === '3d'
+                ? 'order-2 lg:order-1 flex shrink-0'
+                : 'hidden lg:flex lg:order-1 shrink-0'
+          }
+          onClick={(e) => {
+            if (mobileParamsOpen && e.target === e.currentTarget) {
+              setMobileParamsOpen(false);
+            }
+          }}
+        >
+          <SidebarControls
+            params={params}
+            acoustics={acoustics}
+            customDrivers={customDrivers}
+            onChange={handlePatch}
+            onApplyTemplate={handleApplyTemplate}
+            onSaveCustomDriver={handleSaveCustomDriver}
+            onDeleteCustomDriver={handleDeleteCustomDriver}
+            onOpenDriverModal={openDriverModal}
+            mobileDrawerOpen={mobileParamsOpen}
+            onCloseMobileDrawer={() => setMobileParamsOpen(false)}
+          />
+        </div>
 
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <div className="order-1 lg:order-2 flex-1 flex flex-col min-w-0 min-h-0">
           <TelemetryStrip params={params} acoustics={acoustics} />
 
           {activeView === '3d' && <Viewport3D params={params} acoustics={acoustics} />}

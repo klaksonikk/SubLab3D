@@ -292,37 +292,39 @@ export function DriverTsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="driver-ts-modal-title"
     >
-      <div className="w-full max-w-4xl max-h-[92vh] flex flex-col bg-[#111318] border border-white/[0.12] rounded-lg shadow-2xl overflow-hidden">
+      <div className="w-full max-w-4xl max-h-[94vh] flex flex-col bg-[#111318] border border-white/[0.12] rounded-lg shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#0D0F14] border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <Cpu className="w-5 h-5 text-red-400" />
-            <div>
-              <h2 id="driver-ts-modal-title" className="text-sm font-semibold text-white">
+        <div className="px-3.5 sm:px-5 py-3 sm:py-3.5 bg-[#0D0F14] border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <Cpu className="w-5 h-5 text-red-400 shrink-0" />
+            <div className="min-w-0">
+              <h2 id="driver-ts-modal-title" className="text-sm font-semibold text-white leading-snug">
                 {editingDriver
                   ? `Edytor głośnika T-S: ${editingDriver.name}`
                   : 'Nowy własny głośnik — Baza i kalkulator T-S'}
               </h2>
-              <p className="text-[11px] text-zinc-400">
+              <p className="text-[11px] text-zinc-400 line-clamp-2">
                 Wpisz parametry z noty katalogowej — wszystkie wartości T-S oraz impedancja cewek wyliczają się na żywo.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               data-testid="modal-import-wdr-btn"
               onClick={() => wdrInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded bg-[#161920] border border-cyan-500/35 text-cyan-300 hover:bg-cyan-500/10 transition-colors"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded bg-[#161920] border border-cyan-500/35 text-cyan-300 hover:bg-cyan-500/10 transition-colors whitespace-nowrap"
             >
               <FileUp className="w-3.5 h-3.5" />
-              <span>Wczytaj .wdr (WinISD)</span>
+              <span>
+                Wczytaj .wdr<span className="hidden sm:inline"> (WinISD)</span>
+              </span>
             </button>
             <input
               ref={wdrInputRef}
@@ -344,7 +346,7 @@ export function DriverTsModal({
         </div>
 
         {/* Scrollable Body */}
-        <form noValidate onSubmit={handleSave} className="flex-1 overflow-y-auto cad-scroll p-5 space-y-5">
+        <form noValidate onSubmit={handleSave} className="flex-1 overflow-y-auto cad-scroll p-3.5 sm:p-5 space-y-4 sm:space-y-5">
           {wdrError && (
             <div className="bg-rose-500/10 border border-rose-500/30 rounded-md px-3 py-2 text-xs text-rose-300 flex items-center justify-between gap-2">
               <span>{wdrError}</span>

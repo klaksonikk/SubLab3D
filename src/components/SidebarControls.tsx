@@ -9,6 +9,7 @@ import {
   Save,
   Sliders,
   Trash2,
+  X,
 } from 'lucide-react';
 import { BOX_TEMPLATE_PRESETS, DRIVER_PRESETS } from '../engine/presets';
 import { computeDerivedDriverMetrics } from '../engine/simulator';
@@ -46,6 +47,8 @@ interface SidebarControlsProps {
   ) => void;
   onDeleteCustomDriver: (driverId: string) => void;
   onOpenDriverModal: (editTarget: DriverPreset | null, template?: DriverPreset) => void;
+  mobileDrawerOpen?: boolean;
+  onCloseMobileDrawer?: () => void;
 }
 
 interface ImmediateNumberRowProps {
@@ -71,7 +74,7 @@ function ImmediateNumberRow({
 }: ImmediateNumberRowProps) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <label htmlFor={id} className="text-xs text-zinc-300">
+      <label htmlFor={id} className="text-xs text-zinc-300 min-w-0 leading-snug">
         {label}
       </label>
       <div className="flex items-center gap-1.5 shrink-0">
@@ -82,9 +85,9 @@ function ImmediateNumberRow({
           max={max}
           decimals={decimals}
           onChange={onChange}
-          className="w-24 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1 text-right font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
+          className="w-20 sm:w-24 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1 text-right font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
         />
-        <span className="text-[11px] text-zinc-500 w-7">{unit}</span>
+        <span className="text-[11px] text-zinc-500 w-6 sm:w-7">{unit}</span>
       </div>
     </div>
   );
@@ -102,7 +105,7 @@ function ReadOnlyComputedField({ id, label, valueText, unit, hint }: ReadOnlyCom
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={id} className="text-xs text-zinc-400">
+        <label htmlFor={id} className="text-xs text-zinc-400 min-w-0 leading-snug">
           {label}
           <span className="text-red-400 ml-0.5">*</span>
         </label>
@@ -113,9 +116,9 @@ function ReadOnlyComputedField({ id, label, valueText, unit, hint }: ReadOnlyCom
             readOnly
             aria-readonly="true"
             value={valueText}
-            className="w-24 bg-[#08090C] border border-white/[0.08] rounded px-2 py-1 text-right font-mono-num text-xs text-zinc-300 cursor-not-allowed select-all focus:outline-none"
+            className="w-20 sm:w-24 bg-[#08090C] border border-white/[0.08] rounded px-2 py-1 text-right font-mono-num text-xs text-zinc-300 cursor-not-allowed select-all focus:outline-none"
           />
-          <span className="text-[11px] text-zinc-500 w-7">{unit}</span>
+          <span className="text-[11px] text-zinc-500 w-6 sm:w-7">{unit}</span>
         </div>
       </div>
       {hint && <p className="text-[11px] text-zinc-500 leading-snug">{hint}</p>}
@@ -160,6 +163,8 @@ export function SidebarControls({
   onSaveCustomDriver,
   onDeleteCustomDriver,
   onOpenDriverModal,
+  mobileDrawerOpen = false,
+  onCloseMobileDrawer,
 }: SidebarControlsProps) {
   const [openSection, setOpenSection] = useState<'box' | 'port' | 'driver'>('box');
 
@@ -318,10 +323,32 @@ export function SidebarControls({
   return (
     <aside
       aria-label="Parametry projektu obudowy"
-      className="w-full lg:w-[400px] xl:w-[420px] shrink-0 bg-[#111318] border-r border-white/[0.08] flex flex-col lg:h-full overflow-hidden"
+      className={`${
+        mobileDrawerOpen
+          ? 'w-[min(420px,92vw)] h-full shadow-2xl'
+          : 'w-full lg:w-[400px] xl:w-[420px] lg:h-full'
+      } shrink-0 bg-[#111318] border-r border-white/[0.08] flex flex-col overflow-hidden`}
     >
+      {mobileDrawerOpen && onCloseMobileDrawer && (
+        <div className="lg:hidden px-4 py-3 bg-[#0D0F14] border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2 text-xs font-semibold text-white">
+            <Sliders className="w-4 h-4 text-red-400" />
+            <span>Parametry projektu</span>
+          </div>
+          <button
+            type="button"
+            onClick={onCloseMobileDrawer}
+            data-testid="mobile-params-close"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-red-600 rounded hover:bg-red-500 transition-colors"
+          >
+            <span>Gotowe</span>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Template & Enclosure Topology Selector */}
-      <div className="p-4 border-b border-white/[0.08] space-y-3.5 shrink-0">
+      <div className="p-3.5 sm:p-4 border-b border-white/[0.08] space-y-3.5 shrink-0">
         <div>
           <label htmlFor="template-select" className="block text-xs font-medium text-zinc-300 mb-1.5">
             Gotowy szablon projektu
@@ -343,7 +370,7 @@ export function SidebarControls({
         <div>
           <span className="block text-xs font-medium text-zinc-300 mb-1.5">Typ obudowy</span>
           <div
-            className="grid grid-cols-5 gap-1 p-1 bg-[#08090C] border border-white/[0.08] rounded-md"
+            className="grid grid-cols-3 sm:grid-cols-5 gap-1 p-1 bg-[#08090C] border border-white/[0.08] rounded-md"
             role="group"
             aria-label="Typ obudowy"
           >
@@ -664,7 +691,7 @@ export function SidebarControls({
                   <div className="space-y-1.5">
                     <span className="block text-xs text-zinc-300">Umiejscowienie rury (Aero-port)</span>
                     <div
-                      className="grid grid-cols-4 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
+                      className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                       role="group"
                       aria-label="Umiejscowienie rury"
                     >

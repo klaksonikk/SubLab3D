@@ -30,13 +30,13 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
   return (
     <section
       aria-label="Parametry akustyczne"
-      className="w-full bg-[#111318] border-b border-white/[0.08] px-5 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 shrink-0"
+      className="w-full bg-[#111318] border-b border-white/[0.08] px-3 py-2.5 sm:px-5 sm:py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-2 sm:gap-4 shrink-0"
     >
       <div>
         <div className="text-[11px] text-zinc-400">
           {isBandpass ? 'Komora przód / tył' : 'Objętość netto (Vnet)'}
         </div>
-        <div className="font-mono-num text-lg font-semibold text-white mt-0.5" data-testid="metric-vnet">
+        <div className="font-mono-num text-base sm:text-lg font-semibold text-white mt-0.5" data-testid="metric-vnet">
           {isBandpass
             ? `${acoustics.ventedChamberNetL.toFixed(1)} / ${acoustics.sealedChamberNetL.toFixed(1)} L`
             : `${acoustics.netVolumeL.toFixed(1)} L`}
@@ -54,7 +54,7 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
               ? 'Strojenie (Tył / Przód)'
               : 'Strojenie portu (Fb)'}
         </div>
-        <div className="font-mono-num text-lg font-semibold text-red-400 mt-0.5" data-testid="metric-fb">
+        <div className="font-mono-num text-base sm:text-lg font-semibold text-red-400 mt-0.5" data-testid="metric-fb">
           {params.enclosureType === 'sealed'
             ? acoustics.sealedQtc?.toFixed(2) ?? '—'
             : params.enclosureType === 'bandpass_6th'
@@ -74,7 +74,7 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
         <div className="text-[11px] text-zinc-400">
           {params.enclosureType === 'bandpass_6th' ? 'Przekrój portów (S)' : 'Przekrój portu (S)'}
         </div>
-        <div className="font-mono-num text-lg font-semibold text-white mt-0.5">
+        <div className="font-mono-num text-base sm:text-lg font-semibold text-white mt-0.5">
           {params.enclosureType === 'sealed'
             ? 'Zamknięta'
             : params.enclosureType === 'bandpass_6th'
@@ -90,8 +90,8 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
 
       <div>
         <div className="text-[11px] text-zinc-400">Prędkość powietrza</div>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <span className="font-mono-num text-lg font-semibold text-white">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mt-0.5">
+          <span className="font-mono-num text-base sm:text-lg font-semibold text-white">
             {params.enclosureType === 'sealed' ? '—' : `${acoustics.portVelocityMs.toFixed(1)} m/s`}
           </span>
           <span className={`text-xs font-medium ${velocityColor}`}>{velocityLabel}</span>
@@ -103,10 +103,10 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
 
       <div className="col-span-2 sm:col-span-1">
         <div className="text-[11px] text-zinc-400">Wyporność wewnętrzna</div>
-        <div className="font-mono-num text-lg font-semibold text-white mt-0.5">
+        <div className="font-mono-num text-base sm:text-lg font-semibold text-white mt-0.5">
           {(acoustics.portTotalDisplacementL + acoustics.totalDriverDisplacementL + params.bracingVolumeL).toFixed(1)} L
         </div>
-        <div className="text-[11px] text-zinc-500 font-mono-num whitespace-nowrap">
+        <div className="text-[11px] text-zinc-500 font-mono-num sm:whitespace-nowrap">
           Port {acoustics.portTotalDisplacementL.toFixed(1)} · Głośnik {acoustics.totalDriverDisplacementL.toFixed(1)} L
         </div>
       </div>
