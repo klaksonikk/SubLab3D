@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { BOX_TEMPLATE_PRESETS, DRIVER_PRESETS } from '../engine/presets';
+import { BOX_TEMPLATE_PRESETS, DRIVER_PRESETS, getTemplateName } from '../engine/presets';
 import { computeDerivedDriverMetrics } from '../engine/simulator';
 import { computeElectricalLoad } from '../engine/tsSolver';
 import type {
@@ -32,6 +32,7 @@ import type {
   SlotPortSide,
   VoiceCoilCount,
 } from '../engine/types';
+import { formatDecimal, useI18n } from '../i18n';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
 interface SidebarControlsProps {
@@ -166,14 +167,16 @@ export function SidebarControls({
   mobileDrawerOpen = false,
   onCloseMobileDrawer,
 }: SidebarControlsProps) {
+  const { lang } = useI18n();
+  const en = lang === 'en';
   const [openSection, setOpenSection] = useState<'box' | 'port' | 'driver'>('box');
 
   const enclosureTypes: Array<{ id: EnclosureType; label: string }> = [
-    { id: 'vented_slot', label: 'Szczelin.' },
-    { id: 'vented_round', label: 'Okrągła' },
-    { id: 'sealed', label: 'Zamknięta' },
-    { id: 'bandpass_4th', label: 'BP 4-rz.' },
-    { id: 'bandpass_6th', label: 'BP 6-rz.' },
+    { id: 'vented_slot', label: en ? 'Slot Port' : 'Szczelin.' },
+    { id: 'vented_round', label: en ? 'Aero Port' : 'Okrągła' },
+    { id: 'sealed', label: en ? 'Sealed' : 'Zamknięta' },
+    { id: 'bandpass_4th', label: en ? '4th BP' : 'BP 4-rz.' },
+    { id: 'bandpass_6th', label: en ? '6th BP' : 'BP 6-rz.' },
   ];
 
   const allDrivers = useMemo(
@@ -191,15 +194,18 @@ export function SidebarControls({
 
   const elecLoad = useMemo(
     () =>
-      computeElectricalLoad({
-        voiceCoilCount: params.driverVoiceCoilCount,
-        coilNominalOhms: params.driverCoilNominalOhms,
-        coilReOhms: params.driverCoilReOhms,
-        baseLeMh: params.driverCoilLeMh,
-        coilWiring: params.driverCoilWiring,
-        driverCount: params.driverCount,
-        arrayWiring: params.driverArrayWiring,
-      }),
+      computeElectricalLoad(
+        {
+          voiceCoilCount: params.driverVoiceCoilCount,
+          coilNominalOhms: params.driverCoilNominalOhms,
+          coilReOhms: params.driverCoilReOhms,
+          baseLeMh: params.driverCoilLeMh,
+          coilWiring: params.driverCoilWiring,
+          driverCount: params.driverCount,
+          arrayWiring: params.driverArrayWiring,
+        },
+        lang,
+      ),
     [
       params.driverVoiceCoilCount,
       params.driverCoilNominalOhms,
@@ -208,6 +214,7 @@ export function SidebarControls({
       params.driverCoilWiring,
       params.driverCount,
       params.driverArrayWiring,
+      lang,
     ],
   );
 
@@ -322,7 +329,7 @@ export function SidebarControls({
 
   return (
     <aside
-      aria-label="Parametry projektu obudowy"
+      aria-label={en ? 'Enclosure project parameters' : 'Parametry projektu obudowy'}
       className={`${
         mobileDrawerOpen
           ? 'w-[min(420px,92vw)] h-full shadow-2xl'
@@ -333,7 +340,7 @@ export function SidebarControls({
         <div className="lg:hidden px-4 py-3 bg-[#0D0F14] border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 text-xs font-semibold text-white">
             <Sliders className="w-4 h-4 text-red-400" />
-            <span>Parametry projektu</span>
+            <span>{en ? 'Project Parameters' : 'Parametry projektu'}</span>
           </div>
           <button
             type="button"
@@ -341,7 +348,7 @@ export function SidebarControls({
             data-testid="mobile-params-close"
             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-red-600 rounded hover:bg-red-500 transition-colors"
           >
-            <span>Gotowe</span>
+            <span>{en ? 'Done' : 'Gotowe'}</span>
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -351,7 +358,7 @@ export function SidebarControls({
       <div className="p-3.5 sm:p-4 border-b border-white/[0.08] space-y-3.5 shrink-0">
         <div>
           <label htmlFor="template-select" className="block text-xs font-medium text-zinc-300 mb-1.5">
-            Gotowy szablon projektu
+            {en ? 'Project Template Preset' : 'Gotowy szablon projektu'}
           </label>
           <select
             id="template-select"
@@ -361,18 +368,20 @@ export function SidebarControls({
           >
             {BOX_TEMPLATE_PRESETS.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
-                {tpl.name}
+                {getTemplateName(tpl, lang)}
               </option>
             ))}
           </select>
         </div>
 
         <div>
-          <span className="block text-xs font-medium text-zinc-300 mb-1.5">Typ obudowy</span>
+          <span className="block text-xs font-medium text-zinc-300 mb-1.5">
+            {en ? 'Enclosure Type' : 'Typ obudowy'}
+          </span>
           <div
             className="grid grid-cols-3 sm:grid-cols-5 gap-1 p-1 bg-[#08090C] border border-white/[0.08] rounded-md"
             role="group"
-            aria-label="Typ obudowy"
+            aria-label={en ? 'Enclosure Type' : 'Typ obudowy'}
           >
             {enclosureTypes.map((item) => (
               <button
@@ -404,7 +413,9 @@ export function SidebarControls({
           >
             <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-red-400 shrink-0" />
-              <span className="text-sm font-semibold text-white">01. Wymiary zewnętrzne i płyta</span>
+              <span className="text-sm font-semibold text-white">
+                {en ? '01. External Dimensions & Board' : '01. Wymiary zewnętrzne i płyta'}
+              </span>
             </div>
             {openSection === 'box' ? (
               <ChevronDown className="w-4 h-4 text-zinc-400" />
@@ -417,18 +428,24 @@ export function SidebarControls({
             <div className="px-4 pb-4 pt-1 space-y-3">
               {/* Auto-calculated box dimension selector */}
               <div className="space-y-1.5">
-                <span className="block text-xs text-zinc-300">Wyliczaj automatycznie</span>
+                <span className="block text-xs text-zinc-300">
+                  {en ? 'Auto-calculate' : 'Wyliczaj automatycznie'}
+                </span>
                 <div
                   className="grid grid-cols-4 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                   role="group"
-                  aria-label="Automatycznie wyliczany wymiar obudowy"
+                  aria-label={
+                    en
+                      ? 'Auto-calculated enclosure dimension'
+                      : 'Automatycznie wyliczany wymiar obudowy'
+                  }
                 >
                   {(
                     [
-                      { id: 'none', label: 'Objętość*' },
-                      { id: 'width', label: 'Szer. (W)*' },
-                      { id: 'height', label: 'Wys. (H)*' },
-                      { id: 'depth', label: 'Głęb. (D)*' },
+                      { id: 'none', label: en ? 'Volume*' : 'Objętość*' },
+                      { id: 'width', label: en ? 'Width (W)*' : 'Szer. (W)*' },
+                      { id: 'height', label: en ? 'Height (H)*' : 'Wys. (H)*' },
+                      { id: 'depth', label: en ? 'Depth (D)*' : 'Głęb. (D)*' },
                     ] as Array<{ id: BoxAutoCalcField; label: string }>
                   ).map((opt) => (
                     <button
@@ -450,14 +467,14 @@ export function SidebarControls({
               {params.boxAutoCalcField === 'width' ? (
                 <ReadOnlyComputedField
                   id="ext-width-auto"
-                  label="Szerokość zewnętrzna (W)"
-                  valueText={acoustics.effectiveExternalWidth.toFixed(1).replace('.', ',')}
+                  label={en ? 'External Width (W)' : 'Szerokość zewnętrzna (W)'}
+                  valueText={formatDecimal(acoustics.effectiveExternalWidth, 1, lang)}
                   unit="mm"
                 />
               ) : (
                 <ImmediateNumberRow
                   id="ext-width"
-                  label="Szerokość zewnętrzna (W)"
+                  label={en ? 'External Width (W)' : 'Szerokość zewnętrzna (W)'}
                   value={params.externalWidth}
                   min={220}
                   max={1800}
@@ -470,14 +487,14 @@ export function SidebarControls({
               {params.boxAutoCalcField === 'height' ? (
                 <ReadOnlyComputedField
                   id="ext-height-auto"
-                  label="Wysokość zewnętrzna (H)"
-                  valueText={acoustics.effectiveExternalHeight.toFixed(1).replace('.', ',')}
+                  label={en ? 'External Height (H)' : 'Wysokość zewnętrzna (H)'}
+                  valueText={formatDecimal(acoustics.effectiveExternalHeight, 1, lang)}
                   unit="mm"
                 />
               ) : (
                 <ImmediateNumberRow
                   id="ext-height"
-                  label="Wysokość zewnętrzna (H)"
+                  label={en ? 'External Height (H)' : 'Wysokość zewnętrzna (H)'}
                   value={params.externalHeight}
                   min={180}
                   max={1400}
@@ -490,14 +507,14 @@ export function SidebarControls({
               {params.boxAutoCalcField === 'depth' ? (
                 <ReadOnlyComputedField
                   id="ext-depth-auto"
-                  label="Głębokość zewnętrzna (D)"
-                  valueText={acoustics.effectiveExternalDepth.toFixed(1).replace('.', ',')}
+                  label={en ? 'External Depth (D)' : 'Głębokość zewnętrzna (D)'}
+                  valueText={formatDecimal(acoustics.effectiveExternalDepth, 1, lang)}
                   unit="mm"
                 />
               ) : (
                 <ImmediateNumberRow
                   id="ext-depth"
-                  label="Głębokość zewnętrzna (D)"
+                  label={en ? 'External Depth (D)' : 'Głębokość zewnętrzna (D)'}
                   value={params.externalDepth}
                   min={160}
                   max={1400}
@@ -512,7 +529,7 @@ export function SidebarControls({
                 {params.boxAutoCalcField !== 'none' ? (
                   <ImmediateNumberRow
                     id="target-net-vol"
-                    label="Objętość netto (Vnet)"
+                    label={en ? 'Net Volume (Vnet)' : 'Objętość netto (Vnet)'}
                     value={params.targetNetVolumeL}
                     min={6}
                     max={800}
@@ -523,26 +540,28 @@ export function SidebarControls({
                 ) : (
                   <ReadOnlyComputedField
                     id="net-vol-auto"
-                    label="Objętość netto (Vnet)"
-                    valueText={acoustics.netVolumeL.toFixed(2).replace('.', ',')}
+                    label={en ? 'Net Volume (Vnet)' : 'Objętość netto (Vnet)'}
+                    valueText={formatDecimal(acoustics.netVolumeL, 2, lang)}
                     unit="L"
                   />
                 )}
                 <ReadOnlyComputedField
                   id="gross-vol-auto"
-                  label="Całkowita obj. wewnętrzna (Brutto)"
-                  valueText={acoustics.grossVolumeL.toFixed(2).replace('.', ',')}
+                  label={en ? 'Total Internal Volume (Gross)' : 'Całkowita obj. wewnętrzna (Brutto)'}
+                  valueText={formatDecimal(acoustics.grossVolumeL, 2, lang)}
                   unit="L"
                 />
                 <div className="text-[10px] text-zinc-500">
-                  * Pola oznaczone gwiazdką są wyliczane automatycznie na żywo.
+                  {en
+                    ? '* Fields marked with an asterisk are calculated live automatically.'
+                    : '* Pola oznaczone gwiazdką są wyliczane automatycznie na żywo.'}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
                   <label htmlFor="material-select" className="block text-xs text-zinc-300 mb-1">
-                    Materiał płyty
+                    {en ? 'Board Material' : 'Materiał płyty'}
                   </label>
                   <select
                     id="material-select"
@@ -550,15 +569,19 @@ export function SidebarControls({
                     onChange={(e) => onChange({ material: e.target.value as MaterialType })}
                     className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
                   >
-                    <option value="birch_plywood">Sklejka brzozowa</option>
-                    <option value="mdf">Płyta MDF surowa</option>
-                    <option value="matte_black">Laminat czarny</option>
+                    <option value="birch_plywood">
+                      {en ? 'Birch Plywood' : 'Sklejka brzozowa'}
+                    </option>
+                    <option value="mdf">{en ? 'Raw MDF Board' : 'Płyta MDF surowa'}</option>
+                    <option value="matte_black">
+                      {en ? 'Black Laminate' : 'Laminat czarny'}
+                    </option>
                   </select>
                 </div>
 
                 <div>
                   <label htmlFor="thickness-select" className="block text-xs text-zinc-300 mb-1">
-                    Grubość ścianki
+                    {en ? 'Wall Thickness' : 'Grubość ścianki'}
                   </label>
                   <select
                     id="thickness-select"
@@ -577,7 +600,7 @@ export function SidebarControls({
 
               <div>
                 <label htmlFor="joinery-select" className="block text-xs text-zinc-300 mb-1">
-                  Sposób łączenia płyt (Cut-List)
+                  {en ? 'Panel Joinery (Cut-List)' : 'Sposób łączenia płyt (Cut-List)'}
                 </label>
                 <select
                   id="joinery-select"
@@ -585,15 +608,27 @@ export function SidebarControls({
                   onChange={(e) => onChange({ joineryType: e.target.value as JoineryType })}
                   className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
                 >
-                  <option value="top_bottom_cover">Wieńce góra/dół na bokach (standard)</option>
-                  <option value="sides_full">Boki pełne (wieńce między bokami)</option>
-                  <option value="front_back_cover">Front i tył nakładane na całość</option>
+                  <option value="top_bottom_cover">
+                    {en
+                      ? 'Top/bottom overlap sides (standard)'
+                      : 'Wieńce góra/dół na bokach (standard)'}
+                  </option>
+                  <option value="sides_full">
+                    {en
+                      ? 'Full sides (top/bottom inset)'
+                      : 'Boki pełne (wieńce między bokami)'}
+                  </option>
+                  <option value="front_back_cover">
+                    {en
+                      ? 'Front/back overlap entire shell'
+                      : 'Front i tył nakładane na całość'}
+                  </option>
                 </select>
               </div>
 
               <ImmediateNumberRow
                 id="bracing-vol"
-                label="Wyporność wzmocnień (Bracing)"
+                label={en ? 'Bracing Displacement' : 'Wyporność wzmocnień (Bracing)'}
                 value={params.bracingVolumeL}
                 min={0}
                 max={30}
@@ -619,10 +654,16 @@ export function SidebarControls({
               </span>
               <span className="text-sm font-semibold text-white">
                 {params.enclosureType === 'sealed'
-                  ? '02. Parametry komory zamkniętej'
+                  ? en
+                    ? '02. Sealed Chamber Parameters'
+                    : '02. Parametry komory zamkniętej'
                   : params.enclosureType === 'bandpass_6th'
-                    ? '02. Bandpass 6-rzędu (Dwa porty)'
-                    : '02. Tunel Bass-Reflex i strojenie'}
+                    ? en
+                      ? '02. 6th-Order Bandpass (Dual Ports)'
+                      : '02. Bandpass 6-rzędu (Dwa porty)'
+                    : en
+                      ? '02. Bass-Reflex Port & Tuning'
+                      : '02. Tunel Bass-Reflex i strojenie'}
               </span>
             </div>
             {openSection === 'port' ? (
@@ -636,17 +677,23 @@ export function SidebarControls({
             <div className="px-4 pb-4 pt-1 space-y-3">
               {params.enclosureType !== 'sealed' && (
                 <div className="space-y-1.5">
-                  <span className="block text-xs text-zinc-300">Wyliczaj automatycznie (port)</span>
+                  <span className="block text-xs text-zinc-300">
+                    {en ? 'Auto-calculate (port)' : 'Wyliczaj automatycznie (port)'}
+                  </span>
                   <div
                     className="grid grid-cols-3 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                     role="group"
-                    aria-label="Tryb wyliczania parametrów portu"
+                    aria-label={
+                      en
+                        ? 'Port auto-calculation mode'
+                        : 'Tryb wyliczania parametrów portu'
+                    }
                   >
                     {(
                       [
-                        { id: 'dimensions', label: 'Strojenie Fb*' },
-                        { id: 'tuning', label: 'Długość (L)*' },
-                        { id: 'area_from_length', label: 'Pole (S)*' },
+                        { id: 'dimensions', label: en ? 'Tuning Fb*' : 'Strojenie Fb*' },
+                        { id: 'tuning', label: en ? 'Length (L)*' : 'Długość (L)*' },
+                        { id: 'area_from_length', label: en ? 'Area (S)*' : 'Pole (S)*' },
                       ] as Array<{ id: PortControlMode; label: string }>
                     ).map((opt) => (
                       <button
@@ -669,38 +716,48 @@ export function SidebarControls({
               {params.enclosureType === 'sealed' ? (
                 <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-3 text-xs text-zinc-300 space-y-1.5">
                   <div className="flex justify-between">
-                    <span className="text-zinc-400">Docelowe Qtc audiofilskie:</span>
+                    <span className="text-zinc-400">
+                      {en ? 'Target audiophile Qtc:' : 'Docelowe Qtc audiofilskie:'}
+                    </span>
                     <span className="font-mono-num text-white">0.707 (Butterworth)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-400">Kompaktowe Qtc (punch):</span>
+                    <span className="text-zinc-400">
+                      {en ? 'Compact punch Qtc:' : 'Kompaktowe Qtc (punch):'}
+                    </span>
                     <span className="font-mono-num text-zinc-200">0.92 (Chebyshev C2)</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-zinc-400">Aktualne Qtc obudowy:</span>
+                    <span className="text-zinc-400">
+                      {en ? 'Current box Qtc:' : 'Aktualne Qtc obudowy:'}
+                    </span>
                     <span className="font-mono-num text-red-400 font-semibold">
-                      {acoustics.sealedQtc?.toFixed(3) ?? '—'}
+                      {acoustics.sealedQtc ? formatDecimal(acoustics.sealedQtc, 3, lang) : '—'}
                     </span>
                   </div>
                   <p className="text-[11px] text-zinc-400 pt-1 leading-relaxed">
-                    Obudowa zamknięta nie wymaga tunelu. Zwiększenie objętości obniża Qtc i poprawia zejście; zmniejszenie podbija średni bas.
+                    {en
+                      ? 'A sealed enclosure needs no port. Increasing volume lowers Qtc for deeper extension; decreasing raises Qtc for tighter mid-bass punch.'
+                      : 'Obudowa zamknięta nie wymaga tunelu. Zwiększenie objętości obniża Qtc i poprawia zejście; zmniejszenie podbija średni bas.'}
                   </p>
                 </div>
               ) : params.enclosureType === 'vented_round' ? (
                 <>
                   <div className="space-y-1.5">
-                    <span className="block text-xs text-zinc-300">Umiejscowienie rury (Aero-port)</span>
+                    <span className="block text-xs text-zinc-300">
+                      {en ? 'Pipe Face Placement (Aero-port)' : 'Umiejscowienie rury (Aero-port)'}
+                    </span>
                     <div
                       className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                       role="group"
-                      aria-label="Umiejscowienie rury"
+                      aria-label={en ? 'Pipe placement face' : 'Umiejscowienie rury'}
                     >
                       {(
                         [
-                          { id: 'front', label: 'Przód' },
-                          { id: 'top', label: 'Góra' },
-                          { id: 'side_right', label: 'Prawy bok' },
-                          { id: 'side_left', label: 'Lewy bok' },
+                          { id: 'front', label: en ? 'Front' : 'Przód' },
+                          { id: 'top', label: en ? 'Top' : 'Góra' },
+                          { id: 'side_right', label: en ? 'Right Side' : 'Prawy bok' },
+                          { id: 'side_left', label: en ? 'Left Side' : 'Lewy bok' },
                         ] as Array<{ id: PortFace; label: string }>
                       ).map((opt) => (
                         <button
@@ -721,7 +778,9 @@ export function SidebarControls({
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-zinc-300">Liczba rur (Aero-port)</span>
+                    <span className="text-xs text-zinc-300">
+                      {en ? 'Pipe Count (Aero-port)' : 'Liczba rur (Aero-port)'}
+                    </span>
                     <div className="flex gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]">
                       {[1, 2, 3, 4].map((cnt) => (
                         <button
@@ -741,17 +800,19 @@ export function SidebarControls({
                   </div>
                   {params.portCount >= 2 && (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-zinc-300">Układ rur</span>
+                      <span className="text-xs text-zinc-300">
+                        {en ? 'Pipe Arrangement' : 'Układ rur'}
+                      </span>
                       <div
                         className="flex gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]"
                         role="group"
-                        aria-label="Układ rur"
+                        aria-label={en ? 'Pipe arrangement' : 'Układ rur'}
                       >
                         {(
                           [
                             { id: 'auto', label: 'Auto' },
-                            { id: 'vertical', label: 'Pion' },
-                            { id: 'horizontal', label: 'Poziom' },
+                            { id: 'vertical', label: en ? 'Vertical' : 'Pion' },
+                            { id: 'horizontal', label: en ? 'Horizontal' : 'Poziom' },
                           ] as Array<{ id: RoundPortOrientation; label: string }>
                         ).map((opt) => (
                           <button
@@ -775,7 +836,7 @@ export function SidebarControls({
                     <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
                       <ImmediateNumberRow
                         id="target-fb-round"
-                        label="Strojenie portu Fb"
+                        label={en ? 'Port Tuning Fb' : 'Strojenie portu Fb'}
                         value={params.targetTuningHz}
                         min={15}
                         max={90}
@@ -785,7 +846,7 @@ export function SidebarControls({
                       />
                       <ImmediateNumberRow
                         id="target-area-round"
-                        label="Pole przekroju portu"
+                        label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
                         value={params.targetPortAreaCm2}
                         min={15}
                         max={2500}
@@ -796,20 +857,24 @@ export function SidebarControls({
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-len-round"
-                          label="Długość portu (L)"
-                          valueText={acoustics.effectivePortLength.toFixed(1).replace('.', ',')}
+                          label={en ? 'Port Length (L)' : 'Długość portu (L)'}
+                          valueText={formatDecimal(acoustics.effectivePortLength, 1, lang)}
                           unit="mm"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-round"
-                          label="Wyporność portu"
-                          valueText={acoustics.portTotalDisplacementL.toFixed(2).replace('.', ',')}
+                          label={en ? 'Port Displacement' : 'Wyporność portu'}
+                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
                           unit="L"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-dia-round"
-                          label={`Średnica 1 rury (${params.portCount}×)`}
-                          valueText={acoustics.effectivePortDiameter.toFixed(1).replace('.', ',')}
+                          label={
+                            en
+                              ? `Diameter per pipe (${params.portCount}×)`
+                              : `Średnica 1 rury (${params.portCount}×)`
+                          }
+                          valueText={formatDecimal(acoustics.effectivePortDiameter, 1, lang)}
                           unit="mm"
                         />
                       </div>
@@ -818,7 +883,7 @@ export function SidebarControls({
                     <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
                       <ImmediateNumberRow
                         id="target-fb-round-len"
-                        label="Strojenie portu Fb"
+                        label={en ? 'Port Tuning Fb' : 'Strojenie portu Fb'}
                         value={params.targetTuningHz}
                         min={15}
                         max={90}
@@ -828,7 +893,7 @@ export function SidebarControls({
                       />
                       <ImmediateNumberRow
                         id="port-len-round"
-                        label="Długość rury (L)"
+                        label={en ? 'Pipe Length (L)' : 'Długość rury (L)'}
                         value={params.portLength}
                         min={40}
                         max={1600}
@@ -839,20 +904,24 @@ export function SidebarControls({
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-area-round"
-                          label="Pole przekroju portu"
-                          valueText={acoustics.portAreaCm2.toFixed(1).replace('.', ',')}
+                          label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
+                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
                           unit="cm²"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-dia-round"
-                          label={`Średnica 1 rury (${params.portCount}×)`}
-                          valueText={acoustics.effectivePortDiameter.toFixed(1).replace('.', ',')}
+                          label={
+                            en
+                              ? `Diameter per pipe (${params.portCount}×)`
+                              : `Średnica 1 rury (${params.portCount}×)`
+                          }
+                          valueText={formatDecimal(acoustics.effectivePortDiameter, 1, lang)}
                           unit="mm"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-round"
-                          label="Wyporność portu"
-                          valueText={acoustics.portTotalDisplacementL.toFixed(2).replace('.', ',')}
+                          label={en ? 'Port Displacement' : 'Wyporność portu'}
+                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
                           unit="L"
                         />
                       </div>
@@ -861,7 +930,7 @@ export function SidebarControls({
                     <>
                       <ImmediateNumberRow
                         id="port-dia"
-                        label="Średnica wewnętrzna rury"
+                        label={en ? 'Pipe Inner Diameter' : 'Średnica wewnętrzna rury'}
                         value={params.portDiameter}
                         min={35}
                         max={350}
@@ -871,7 +940,7 @@ export function SidebarControls({
                       />
                       <ImmediateNumberRow
                         id="port-len-round"
-                        label="Długość rury (L)"
+                        label={en ? 'Pipe Length (L)' : 'Długość rury (L)'}
                         value={params.portLength}
                         min={40}
                         max={1400}
@@ -882,20 +951,22 @@ export function SidebarControls({
                       <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-2.5 space-y-1.5">
                         <ReadOnlyComputedField
                           id="auto-fb-round"
-                          label="Strojenie portu Fb"
-                          valueText={acoustics.tuningHz ? acoustics.tuningHz.toFixed(1).replace('.', ',') : '—'}
+                          label={en ? 'Port Tuning Fb' : 'Strojenie portu Fb'}
+                          valueText={
+                            acoustics.tuningHz ? formatDecimal(acoustics.tuningHz, 1, lang) : '—'
+                          }
                           unit="Hz"
                         />
                         <ReadOnlyComputedField
                           id="auto-area-round"
-                          label="Pole przekroju portu"
-                          valueText={acoustics.portAreaCm2.toFixed(1).replace('.', ',')}
+                          label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
+                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
                           unit="cm²"
                         />
                         <ReadOnlyComputedField
                           id="auto-disp-round"
-                          label="Wyporność portu"
-                          valueText={acoustics.portTotalDisplacementL.toFixed(2).replace('.', ',')}
+                          label={en ? 'Port Displacement' : 'Wyporność portu'}
+                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
                           unit="L"
                         />
                       </div>
@@ -905,7 +976,7 @@ export function SidebarControls({
                   <div className="pt-2 border-t border-white/[0.08] space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-medium text-zinc-300">
-                        Pozycja rury na ścianie
+                        {en ? 'Pipe Position on Panel' : 'Pozycja rury na ścianie'}
                       </span>
                       {(params.portOffsetX !== 0 || params.portOffsetY !== 0) && (
                         <button
@@ -913,7 +984,7 @@ export function SidebarControls({
                           onClick={() => onChange({ portOffsetX: 0, portOffsetY: 0 })}
                           className="text-[11px] text-red-400 hover:text-red-300 transition-colors"
                         >
-                          Resetuj pozycję
+                          {en ? 'Reset Position' : 'Resetuj pozycję'}
                         </button>
                       )}
                     </div>
@@ -921,8 +992,12 @@ export function SidebarControls({
                       id="port-offset-x"
                       label={
                         params.portFace === 'side_left' || params.portFace === 'side_right'
-                          ? 'Pozycja rury (Tył / Przód)'
-                          : 'Pozycja rury (Lewo / Prawo)'
+                          ? en
+                            ? 'Pipe Offset (Back / Front)'
+                            : 'Pozycja rury (Tył / Przód)'
+                          : en
+                            ? 'Pipe Offset (Left / Right)'
+                            : 'Pozycja rury (Lewo / Prawo)'
                       }
                       value={params.portOffsetX}
                       min={acoustics.offsetBounds.portMinX}
@@ -935,8 +1010,12 @@ export function SidebarControls({
                       id="port-offset-y"
                       label={
                         params.portFace === 'top'
-                          ? 'Pozycja rury (Przód / Tył)'
-                          : 'Pozycja rury (Dół / Góra)'
+                          ? en
+                            ? 'Pipe Offset (Front / Back)'
+                            : 'Pozycja rury (Przód / Tył)'
+                          : en
+                            ? 'Pipe Offset (Bottom / Top)'
+                            : 'Pozycja rury (Dół / Góra)'
                       }
                       value={params.portOffsetY}
                       min={acoustics.offsetBounds.portMinY}
@@ -948,7 +1027,7 @@ export function SidebarControls({
                   </div>
                   <div className="flex items-center justify-between pt-1">
                     <label htmlFor="port-flared" className="text-xs text-zinc-300 cursor-pointer">
-                      Profilowane końce (Aero-Flared)
+                      {en ? 'Flared Pipe Ends (Aero-Flared)' : 'Profilowane końce (Aero-Flared)'}
                     </label>
                     <input
                       id="port-flared"
@@ -964,7 +1043,7 @@ export function SidebarControls({
                   {isBandpass && (
                     <ImmediateNumberRow
                       id="bp-ratio"
-                      label="Podział komór (komora przednia)"
+                      label={en ? 'Chamber Split (Front Chamber)' : 'Podział komór (komora przednia)'}
                       value={Math.round(params.bandpassFrontRatio * 100)}
                       min={25}
                       max={75}
@@ -976,17 +1055,21 @@ export function SidebarControls({
 
                   {!isBandpass && (
                     <div className="space-y-1.5">
-                      <span className="block text-xs text-zinc-300">Położenie portu szczelinowego</span>
+                      <span className="block text-xs text-zinc-300">
+                        {en ? 'Slot Port Position' : 'Położenie portu szczelinowego'}
+                      </span>
                       <div
                         className="grid grid-cols-3 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                         role="group"
-                        aria-label="Położenie portu szczelinowego"
+                        aria-label={
+                          en ? 'Slot port position' : 'Położenie portu szczelinowego'
+                        }
                       >
                         {(
                           [
-                            { id: 'left', label: 'Lewa ściana' },
-                            { id: 'bottom', label: 'Dół' },
-                            { id: 'right', label: 'Prawa ściana' },
+                            { id: 'left', label: en ? 'Left Wall' : 'Lewa ściana' },
+                            { id: 'bottom', label: en ? 'Bottom' : 'Dół' },
+                            { id: 'right', label: en ? 'Right Wall' : 'Prawa ściana' },
                           ] as Array<{ id: SlotPortSide; label: string }>
                         ).map((opt) => (
                           <button
@@ -1008,15 +1091,21 @@ export function SidebarControls({
 
                   {params.enclosureType === 'bandpass_6th' && (
                     <div className="text-[11px] font-semibold text-red-400 pt-1">
-                      Port przedni — wysokie strojenie (Fb-high)
+                      {en
+                        ? 'Front Port — High Tuning (Fb-high)'
+                        : 'Port przedni — wysokie strojenie (Fb-high)'}
                     </div>
                   )}
 
                   <div className="flex items-center justify-between">
                     <label htmlFor="port-full-height" className="text-xs text-zinc-300 cursor-pointer">
                       {!isBandpass && params.portSlotSide === 'bottom'
-                        ? `Pełna szerokość wewnętrzna (${Math.round(acoustics.internalWidth)} mm)`
-                        : `Pełna wysokość wewnętrzna (${Math.round(acoustics.internalHeight)} mm)`}
+                        ? en
+                          ? `Full Internal Width (${Math.round(acoustics.internalWidth)} mm)`
+                          : `Pełna szerokość wewnętrzna (${Math.round(acoustics.internalWidth)} mm)`
+                        : en
+                          ? `Full Internal Height (${Math.round(acoustics.internalHeight)} mm)`
+                          : `Pełna wysokość wewnętrzna (${Math.round(acoustics.internalHeight)} mm)`}
                     </label>
                     <input
                       id="port-full-height"
@@ -1031,8 +1120,12 @@ export function SidebarControls({
                       id="port-height"
                       label={
                         !isBandpass && params.portSlotSide === 'bottom'
-                          ? 'Szerokość portu dolnego'
-                          : 'Wysokość szczeliny (Hp)'
+                          ? en
+                            ? 'Bottom Port Width'
+                            : 'Szerokość portu dolnego'
+                          : en
+                            ? 'Slot Height (Hp)'
+                            : 'Wysokość szczeliny (Hp)'
                       }
                       value={params.portHeight}
                       min={30}
@@ -1051,7 +1144,7 @@ export function SidebarControls({
                     <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
                       <ImmediateNumberRow
                         id="target-fb-slot"
-                        label="Strojenie portu Fb"
+                        label={en ? 'Port Tuning Fb' : 'Strojenie portu Fb'}
                         value={params.targetTuningHz}
                         min={15}
                         max={90}
@@ -1061,7 +1154,7 @@ export function SidebarControls({
                       />
                       <ImmediateNumberRow
                         id="target-area-slot"
-                        label="Pole przekroju portu"
+                        label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
                         value={params.targetPortAreaCm2}
                         min={15}
                         max={2500}
@@ -1072,24 +1165,28 @@ export function SidebarControls({
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-len-slot"
-                          label="Długość portu"
-                          valueText={acoustics.effectivePortLength.toFixed(1).replace('.', ',')}
+                          label={en ? 'Port Length' : 'Długość portu'}
+                          valueText={formatDecimal(acoustics.effectivePortLength, 1, lang)}
                           unit="mm"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-slot"
-                          label="Wyporność portu"
-                          valueText={acoustics.portTotalDisplacementL.toFixed(2).replace('.', ',')}
+                          label={en ? 'Port Displacement' : 'Wyporność portu'}
+                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
                           unit="L"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-width-slot"
                           label={
                             !isBandpass && params.portSlotSide === 'bottom'
-                              ? 'Wysokość szczeliny (Wp)'
-                              : 'Szerokość szczeliny (Wp)'
+                              ? en
+                                ? 'Slot Height (Wp)'
+                                : 'Wysokość szczeliny (Wp)'
+                              : en
+                                ? 'Slot Width (Wp)'
+                                : 'Szerokość szczeliny (Wp)'
                           }
-                          valueText={acoustics.effectivePortWidth.toFixed(1).replace('.', ',')}
+                          valueText={formatDecimal(acoustics.effectivePortWidth, 1, lang)}
                           unit="mm"
                         />
                       </div>
@@ -1098,7 +1195,7 @@ export function SidebarControls({
                     <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
                       <ImmediateNumberRow
                         id="target-fb-slot-len"
-                        label="Strojenie portu Fb"
+                        label={en ? 'Port Tuning Fb' : 'Strojenie portu Fb'}
                         value={params.targetTuningHz}
                         min={15}
                         max={90}
@@ -1108,7 +1205,7 @@ export function SidebarControls({
                       />
                       <ImmediateNumberRow
                         id="port-len-slot"
-                        label="Długość efektywna tunelu (L)"
+                        label={en ? 'Effective Tunnel Length (L)' : 'Długość efektywna tunelu (L)'}
                         value={params.portLength}
                         min={50}
                         max={2200}
@@ -1119,24 +1216,28 @@ export function SidebarControls({
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-area-slot"
-                          label="Pole przekroju portu"
-                          valueText={acoustics.portAreaCm2.toFixed(1).replace('.', ',')}
+                          label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
+                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
                           unit="cm²"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-width-slot"
                           label={
                             !isBandpass && params.portSlotSide === 'bottom'
-                              ? 'Wysokość szczeliny (Wp)'
-                              : 'Szerokość szczeliny (Wp)'
+                              ? en
+                                ? 'Slot Height (Wp)'
+                                : 'Wysokość szczeliny (Wp)'
+                              : en
+                                ? 'Slot Width (Wp)'
+                                : 'Szerokość szczeliny (Wp)'
                           }
-                          valueText={acoustics.effectivePortWidth.toFixed(1).replace('.', ',')}
+                          valueText={formatDecimal(acoustics.effectivePortWidth, 1, lang)}
                           unit="mm"
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-slot"
-                          label="Wyporność portu"
-                          valueText={acoustics.portTotalDisplacementL.toFixed(2).replace('.', ',')}
+                          label={en ? 'Port Displacement' : 'Wyporność portu'}
+                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
                           unit="L"
                         />
                       </div>
@@ -1147,8 +1248,12 @@ export function SidebarControls({
                         id="port-width"
                         label={
                           !isBandpass && params.portSlotSide === 'bottom'
-                            ? 'Wysokość szczeliny (Wp)'
-                            : 'Szerokość szczeliny (Wp)'
+                            ? en
+                              ? 'Slot Height (Wp)'
+                              : 'Wysokość szczeliny (Wp)'
+                            : en
+                              ? 'Slot Width (Wp)'
+                              : 'Szerokość szczeliny (Wp)'
                         }
                         value={params.portWidth}
                         min={16}
@@ -1159,7 +1264,7 @@ export function SidebarControls({
                       />
                       <ImmediateNumberRow
                         id="port-len-slot"
-                        label="Długość efektywna tunelu (L)"
+                        label={en ? 'Effective Tunnel Length (L)' : 'Długość efektywna tunelu (L)'}
                         value={params.portLength}
                         min={50}
                         max={2000}
@@ -1170,20 +1275,22 @@ export function SidebarControls({
                       <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-2.5 space-y-1.5">
                         <ReadOnlyComputedField
                           id="auto-fb-slot"
-                          label="Strojenie portu Fb"
-                          valueText={acoustics.tuningHz ? acoustics.tuningHz.toFixed(1).replace('.', ',') : '—'}
+                          label={en ? 'Port Tuning Fb' : 'Strojenie portu Fb'}
+                          valueText={
+                            acoustics.tuningHz ? formatDecimal(acoustics.tuningHz, 1, lang) : '—'
+                          }
                           unit="Hz"
                         />
                         <ReadOnlyComputedField
                           id="auto-area-slot"
-                          label="Pole przekroju portu"
-                          valueText={acoustics.portAreaCm2.toFixed(1).replace('.', ',')}
+                          label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
+                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
                           unit="cm²"
                         />
                         <ReadOnlyComputedField
                           id="auto-disp-slot"
-                          label="Wyporność portu"
-                          valueText={acoustics.portTotalDisplacementL.toFixed(2).replace('.', ',')}
+                          label={en ? 'Port Displacement' : 'Wyporność portu'}
+                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
                           unit="L"
                         />
                       </div>
@@ -1194,11 +1301,13 @@ export function SidebarControls({
                   {params.enclosureType === 'bandpass_6th' && (
                     <div className="pt-3 mt-2 border-t border-white/[0.08] space-y-3">
                       <div className="text-[11px] font-semibold text-cyan-400">
-                        Port tylny — niskie strojenie (Fb-low)
+                        {en
+                          ? 'Rear Port — Low Tuning (Fb-low)'
+                          : 'Port tylny — niskie strojenie (Fb-low)'}
                       </div>
                       <div className="flex items-center justify-between">
                         <label htmlFor="rear-port-full" className="text-xs text-zinc-300 cursor-pointer">
-                          Pełna wysokość komory tylnej
+                          {en ? 'Full Rear Chamber Height' : 'Pełna wysokość komory tylnej'}
                         </label>
                         <input
                           id="rear-port-full"
@@ -1211,7 +1320,7 @@ export function SidebarControls({
                       {!params.portRearFullHeight && (
                         <ImmediateNumberRow
                           id="rear-port-height"
-                          label="Wysokość portu tylnego"
+                          label={en ? 'Rear Port Height' : 'Wysokość portu tylnego'}
                           value={params.portRearHeight}
                           min={30}
                           max={Math.round(acoustics.internalHeight)}
@@ -1224,7 +1333,7 @@ export function SidebarControls({
                         <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
                           <ImmediateNumberRow
                             id="rear-target-fb"
-                            label="Strojenie portu tylnego (Fb-low)"
+                            label={en ? 'Rear Port Tuning (Fb-low)' : 'Strojenie portu tylnego (Fb-low)'}
                             value={params.targetRearTuningHz}
                             min={14}
                             max={70}
@@ -1234,7 +1343,7 @@ export function SidebarControls({
                           />
                           <ImmediateNumberRow
                             id="rear-target-area"
-                            label="Pole portu tylnego"
+                            label={en ? 'Rear Port Area' : 'Pole portu tylnego'}
                             value={params.targetRearPortAreaCm2}
                             min={15}
                             max={1500}
@@ -1244,14 +1353,14 @@ export function SidebarControls({
                           />
                           <ReadOnlyComputedField
                             id="rear-auto-len"
-                            label="Długość portu tylnego"
-                            valueText={acoustics.effectiveRearPortLength.toFixed(1).replace('.', ',')}
+                            label={en ? 'Rear Port Length' : 'Długość portu tylnego'}
+                            valueText={formatDecimal(acoustics.effectiveRearPortLength, 1, lang)}
                             unit="mm"
                           />
                           <ReadOnlyComputedField
                             id="rear-auto-width"
-                            label="Szerokość portu tylnego"
-                            valueText={acoustics.effectiveRearPortWidth.toFixed(1).replace('.', ',')}
+                            label={en ? 'Rear Port Width' : 'Szerokość portu tylnego'}
+                            valueText={formatDecimal(acoustics.effectiveRearPortWidth, 1, lang)}
                             unit="mm"
                           />
                         </div>
@@ -1259,7 +1368,7 @@ export function SidebarControls({
                         <div className="space-y-2.5 bg-[#08090C] border border-white/[0.08] rounded-md p-3">
                           <ImmediateNumberRow
                             id="rear-target-fb-len"
-                            label="Strojenie portu tylnego (Fb-low)"
+                            label={en ? 'Rear Port Tuning (Fb-low)' : 'Strojenie portu tylnego (Fb-low)'}
                             value={params.targetRearTuningHz}
                             min={14}
                             max={70}
@@ -1269,7 +1378,7 @@ export function SidebarControls({
                           />
                           <ImmediateNumberRow
                             id="rear-port-len"
-                            label="Długość portu tylnego"
+                            label={en ? 'Rear Port Length' : 'Długość portu tylnego'}
                             value={params.portRearLength}
                             min={60}
                             max={2000}
@@ -1279,8 +1388,8 @@ export function SidebarControls({
                           />
                           <ReadOnlyComputedField
                             id="rear-auto-area"
-                            label="Pole portu tylnego"
-                            valueText={acoustics.rearPortAreaCm2.toFixed(1).replace('.', ',')}
+                            label={en ? 'Rear Port Area' : 'Pole portu tylnego'}
+                            valueText={formatDecimal(acoustics.rearPortAreaCm2, 1, lang)}
                             unit="cm²"
                           />
                         </div>
@@ -1288,7 +1397,7 @@ export function SidebarControls({
                         <>
                           <ImmediateNumberRow
                             id="rear-port-width"
-                            label="Szerokość portu tylnego"
+                            label={en ? 'Rear Port Width' : 'Szerokość portu tylnego'}
                             value={params.portRearWidth}
                             min={16}
                             max={200}
@@ -1298,7 +1407,7 @@ export function SidebarControls({
                           />
                           <ImmediateNumberRow
                             id="rear-port-len"
-                            label="Długość portu tylnego"
+                            label={en ? 'Rear Port Length' : 'Długość portu tylnego'}
                             value={params.portRearLength}
                             min={60}
                             max={2000}
@@ -1314,20 +1423,24 @@ export function SidebarControls({
                   {acoustics.slotPort && (
                     <div className="bg-[#08090C] border border-white/[0.08] rounded p-2.5 text-[11px] text-zinc-300 space-y-1 font-mono-num">
                       <div className="flex justify-between">
-                        <span className="text-zinc-400 font-sans">Tunel przód:</span>
+                        <span className="text-zinc-400 font-sans">
+                          {en ? 'Front tunnel:' : 'Tunel przód:'}
+                        </span>
                         <span className="text-red-400">
                           {acoustics.slotPort.isBent
-                            ? `Zagięty L (${Math.round(acoustics.slotPort.baffle1Length)}+${Math.round(acoustics.slotPort.baffle2Length)} mm)`
-                            : `Prosty (${Math.round(acoustics.slotPort.baffle1Length)} mm)`}
+                            ? `${en ? 'L-Bent' : 'Zagięty L'} (${Math.round(acoustics.slotPort.baffle1Length)}+${Math.round(acoustics.slotPort.baffle2Length)} mm)`
+                            : `${en ? 'Straight' : 'Prosty'} (${Math.round(acoustics.slotPort.baffle1Length)} mm)`}
                         </span>
                       </div>
                       {params.enclosureType === 'bandpass_6th' && acoustics.rearSlotPort && (
                         <div className="flex justify-between">
-                          <span className="text-zinc-400 font-sans">Tunel tył:</span>
+                          <span className="text-zinc-400 font-sans">
+                            {en ? 'Rear tunnel:' : 'Tunel tył:'}
+                          </span>
                           <span className="text-cyan-300">
                             {acoustics.rearSlotPort.isBent
-                              ? `Zagięty L (${Math.round(acoustics.rearSlotPort.baffle1Length)}+${Math.round(acoustics.rearSlotPort.baffle2Length)} mm)`
-                              : `Prosty (${Math.round(acoustics.rearSlotPort.baffle1Length)} mm)`}
+                              ? `${en ? 'L-Bent' : 'Zagięty L'} (${Math.round(acoustics.rearSlotPort.baffle1Length)}+${Math.round(acoustics.rearSlotPort.baffle2Length)} mm)`
+                              : `${en ? 'Straight' : 'Prosty'} (${Math.round(acoustics.rearSlotPort.baffle1Length)} mm)`}
                           </span>
                         </div>
                       )}
@@ -1351,7 +1464,9 @@ export function SidebarControls({
               <span className="w-6 shrink-0 inline-flex items-center justify-center font-mono-num text-[11px] font-bold text-red-400 whitespace-nowrap">
                 T-S
               </span>
-              <span className="text-sm font-semibold text-white">03. Głośnik i parametry Thiele-Small</span>
+              <span className="text-sm font-semibold text-white">
+                {en ? '03. Driver & Thiele-Small Parameters' : '03. Głośnik i parametry Thiele-Small'}
+              </span>
             </div>
             {openSection === 'driver' ? (
               <ChevronDown className="w-4 h-4 text-zinc-400" />
@@ -1366,7 +1481,7 @@ export function SidebarControls({
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <label htmlFor="driver-preset" className="text-xs text-zinc-300">
-                    Profil przetwornika
+                    {en ? 'Driver Profile' : 'Profil przetwornika'}
                   </label>
                   <button
                     type="button"
@@ -1374,7 +1489,7 @@ export function SidebarControls({
                     className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-300 transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Nowy / T-S</span>
+                    <span>{en ? 'New / T-S' : 'Nowy / T-S'}</span>
                   </button>
                 </div>
 
@@ -1384,7 +1499,7 @@ export function SidebarControls({
                   onChange={(e) => handleDriverPresetChange(e.target.value)}
                   className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-red-500"
                 >
-                  <optgroup label="Domyślny głośnik (Deaf Bonce)">
+                  <optgroup label={en ? 'Default Driver (Deaf Bonce)' : 'Domyślny głośnik (Deaf Bonce)'}>
                     {DRIVER_PRESETS.map((drv) => (
                       <option key={drv.id} value={drv.id}>
                         {drv.name} ({drv.voiceCoilCount === 2 ? `DVC ${drv.coilNominalOhms}Ω` : `SVC ${drv.coilNominalOhms}Ω`})
@@ -1392,7 +1507,7 @@ export function SidebarControls({
                     ))}
                   </optgroup>
                   {customDrivers.length > 0 && (
-                    <optgroup label="Własne przetworniki (sync WSD)">
+                    <optgroup label={en ? 'Custom Drivers (WSD sync)' : 'Własne przetworniki (sync WSD)'}>
                       {customDrivers.map((drv) => (
                         <option key={drv.id} value={drv.id}>
                           {drv.name} ({drv.sizeLabel} · {drv.voiceCoilCount === 2 ? `2×${drv.coilNominalOhms ?? 2}Ω` : `1×${drv.coilNominalOhms ?? 4}Ω`})
@@ -1404,7 +1519,13 @@ export function SidebarControls({
 
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[10px] text-zinc-500 font-mono-num">
-                    Źródło: {activeDriverPreset.source ?? (activeDriverPreset.isCustom ? 'Własny T-S' : 'Deaf Bonce')}
+                    {en ? 'Source: ' : 'Źródło: '}
+                    {activeDriverPreset.source ??
+                      (activeDriverPreset.isCustom
+                        ? en
+                          ? 'Custom T-S'
+                          : 'Własny T-S'
+                        : 'Deaf Bonce')}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -1413,7 +1534,15 @@ export function SidebarControls({
                       className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-200 bg-[#161920] border border-white/[0.12] rounded hover:bg-white/10 transition-colors"
                     >
                       <Edit3 className="w-3 h-3 text-cyan-300" />
-                      <span>{activeCustomDriver ? 'Edytuj T-S' : 'Klonuj do własnych'}</span>
+                      <span>
+                        {activeCustomDriver
+                          ? en
+                            ? 'Edit T-S'
+                            : 'Edytuj T-S'
+                          : en
+                            ? 'Clone to Custom'
+                            : 'Klonuj do własnych'}
+                      </span>
                     </button>
 
                     {activeCustomDriver && (
@@ -1421,11 +1550,15 @@ export function SidebarControls({
                         <button
                           type="button"
                           onClick={handleUpdateActiveCustomDriver}
-                          title="Zapisz bieżące zmiany do własnego głośnika i zsynchronizuj z WSD"
+                          title={
+                            en
+                              ? 'Save current changes to custom driver and sync with WSD'
+                              : 'Zapisz bieżące zmiany do własnego głośnika i zsynchronizuj z WSD'
+                          }
                           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-200 bg-[#161920] border border-white/[0.12] rounded hover:bg-white/10 transition-colors"
                         >
                           <Save className="w-3 h-3 text-red-400" />
-                          <span>Nadpisz</span>
+                          <span>{en ? 'Update' : 'Nadpisz'}</span>
                         </button>
                         <button
                           type="button"
@@ -1433,7 +1566,7 @@ export function SidebarControls({
                             onDeleteCustomDriver(activeCustomDriver.id);
                             handleDriverPresetChange(DRIVER_PRESETS[0].id);
                           }}
-                          title="Usuń własny głośnik"
+                          title={en ? 'Delete custom driver' : 'Usuń własny głośnik'}
                           className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-rose-300 bg-rose-500/10 border border-rose-500/25 rounded hover:bg-rose-500/20 transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -1447,7 +1580,9 @@ export function SidebarControls({
               {/* Voice Coils & Wiring Block */}
               <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-zinc-200">Cewki i łączenie głośników</span>
+                  <span className="text-xs font-medium text-zinc-200">
+                    {en ? 'Voice Coils & Driver Wiring' : 'Cewki i łączenie głośników'}
+                  </span>
                   <div className="grid grid-cols-2 gap-1 bg-[#111318] p-0.5 rounded border border-white/[0.08]">
                     {([1, 2] as const).map((vc) => (
                       <button
@@ -1478,7 +1613,9 @@ export function SidebarControls({
 
                 <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Z cewki (Ω)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'Coil Z (Ω)' : 'Z cewki (Ω)'}
+                    </span>
                     <ImmediateNumberInput
                       id="drv-coil-z"
                       value={params.driverCoilNominalOhms}
@@ -1490,7 +1627,9 @@ export function SidebarControls({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Re cewki (Ω)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'Coil Re (Ω)' : 'Re cewki (Ω)'}
+                    </span>
                     <ImmediateNumberInput
                       id="drv-coil-re"
                       value={params.driverCoilReOhms}
@@ -1505,12 +1644,14 @@ export function SidebarControls({
 
                 {params.driverVoiceCoilCount === 2 && (
                   <div className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Łączenie cewek (wewnątrz)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'Coil Wiring (internal)' : 'Łączenie cewek (wewnątrz)'}
+                    </span>
                     <div className="grid grid-cols-2 gap-1 bg-[#111318] p-0.5 rounded border border-white/[0.08]">
                       {(
                         [
-                          { id: 'parallel', label: 'Równoległe' },
-                          { id: 'series', label: 'Szeregowe' },
+                          { id: 'parallel', label: en ? 'Parallel' : 'Równoległe' },
+                          { id: 'series', label: en ? 'Series' : 'Szeregowe' },
                         ] as const
                       ).map((opt) => (
                         <button
@@ -1533,7 +1674,9 @@ export function SidebarControls({
                 {params.driverCount >= 2 && (
                   <div className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
-                      Łączenie głośników ({params.driverCount} szt.)
+                      {en
+                        ? `Driver Array Wiring (${params.driverCount} pcs)`
+                        : `Łączenie głośników (${params.driverCount} szt.)`}
                     </span>
                     <div
                       className={`grid gap-1 bg-[#111318] p-0.5 rounded border border-white/[0.08] ${
@@ -1544,8 +1687,8 @@ export function SidebarControls({
                     >
                       {(
                         [
-                          { id: 'parallel', label: 'Równoległe' },
-                          { id: 'series', label: 'Szeregowe' },
+                          { id: 'parallel', label: en ? 'Parallel' : 'Równoległe' },
+                          { id: 'series', label: en ? 'Series' : 'Szeregowe' },
                           ...(params.driverCount === 4
                             ? [{ id: 'series_parallel' as const, label: '2S2P' }]
                             : params.driverCount === 6
@@ -1574,7 +1717,9 @@ export function SidebarControls({
                   data-testid="sidebar-impedance-summary"
                   className="pt-1.5 border-t border-white/[0.08] flex items-center justify-between gap-2 text-[11px] font-mono-num"
                 >
-                  <span className="text-zinc-400 font-sans">Wypadkowo:</span>
+                  <span className="text-zinc-400 font-sans">
+                    {en ? 'Combined Load:' : 'Wypadkowo:'}
+                  </span>
                   <span className="text-cyan-300 font-semibold text-right">
                     {elecLoad.totalNominalOhms.toFixed(2).replace(/\.00$/, '.0')} Ω · Re{' '}
                     {elecLoad.totalReOhms.toFixed(2)} Ω
@@ -1589,7 +1734,7 @@ export function SidebarControls({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold text-cyan-300">
-                    Podgląd parametrów
+                    {en ? 'Parameter Preview' : 'Podgląd parametrów'}
                   </span>
                   <span className="text-[10px] font-mono-num text-zinc-400 truncate max-w-[180px]">
                     {elecLoad.wiringSummaryLabel}
@@ -1605,7 +1750,7 @@ export function SidebarControls({
                     { label: '2.83V', val: `${liveDriverPreview.spl283v1m.toFixed(1)} dB` },
                     { label: 'Bl', val: `${liveDriverPreview.bl.toFixed(1)} Tm` },
                     { label: 'Mms', val: `${Math.round(liveDriverPreview.mms)} g` },
-                    { label: 'Vd łącz.', val: `${Math.round(liveDriverPreview.vdCm3)} cm³` },
+                    { label: en ? 'Vd total' : 'Vd łącz.', val: `${Math.round(liveDriverPreview.vdCm3)} cm³` },
                   ].map((item) => (
                     <div
                       key={item.label}
@@ -1620,11 +1765,13 @@ export function SidebarControls({
 
               {/* Driver count: 1 to 6 */}
               <div className="space-y-1.5">
-                <span className="block text-xs text-zinc-300">Liczba głośników (1–6)</span>
+                <span className="block text-xs text-zinc-300">
+                  {en ? 'Driver Count (1–6)' : 'Liczba głośników (1–6)'}
+                </span>
                 <div
                   className="grid grid-cols-6 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                   role="group"
-                  aria-label="Liczba głośników"
+                  aria-label={en ? 'Driver Count' : 'Liczba głośników'}
                 >
                   {([1, 2, 3, 4, 5, 6] as const).map((cnt) => (
                     <button
@@ -1646,16 +1793,18 @@ export function SidebarControls({
               {/* Driver mounting face (Front vs Top Sub-Up) */}
               {!isBandpass && (
                 <div className="space-y-1.5">
-                  <span className="block text-xs text-zinc-300">Umiejscowienie głośników</span>
+                  <span className="block text-xs text-zinc-300">
+                    {en ? 'Driver Mounting Face' : 'Umiejscowienie głośników'}
+                  </span>
                   <div
                     className="grid grid-cols-2 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                     role="group"
-                    aria-label="Umiejscowienie głośników"
+                    aria-label={en ? 'Driver mounting face' : 'Umiejscowienie głośników'}
                   >
                     {(
                       [
-                        { id: 'front', label: 'Przód (Front)' },
-                        { id: 'top', label: 'Góra (Sub-Up)' },
+                        { id: 'front', label: en ? 'Front' : 'Przód (Front)' },
+                        { id: 'top', label: en ? 'Top (Sub-Up)' : 'Góra (Sub-Up)' },
                       ] as Array<{ id: DriverFace; label: string }>
                     ).map((opt) => (
                       <button
@@ -1681,7 +1830,9 @@ export function SidebarControls({
               {params.driverCount >= 2 && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-zinc-300">Układ głośników</span>
+                    <span className="text-xs text-zinc-300">
+                      {en ? 'Driver Layout' : 'Układ głośników'}
+                    </span>
                     <span className="text-[11px] font-mono-num text-red-400 truncate">
                       {acoustics.driverLayoutLabel}
                     </span>
@@ -1689,14 +1840,14 @@ export function SidebarControls({
                   <div
                     className="grid grid-cols-4 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]"
                     role="group"
-                    aria-label="Układ wielu głośników"
+                    aria-label={en ? 'Multi-driver layout' : 'Układ wielu głośników'}
                   >
                     {(
                       [
                         { id: 'auto', label: 'Auto' },
-                        { id: 'staggered', label: 'Plaster' },
-                        { id: 'grid', label: 'Siatka' },
-                        { id: 'inline', label: 'Liniowy' },
+                        { id: 'staggered', label: en ? 'Staggered' : 'Plaster' },
+                        { id: 'grid', label: en ? 'Grid' : 'Siatka' },
+                        { id: 'inline', label: en ? 'Inline' : 'Liniowy' },
                       ] as Array<{ id: DriverPattern; label: string }>
                     ).map((opt) => (
                       <button
@@ -1720,7 +1871,7 @@ export function SidebarControls({
               <div className="pt-2 border-t border-white/[0.08] space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium text-zinc-300">
-                    Przesunięcie głośnika
+                    {en ? 'Driver Position Offset' : 'Przesunięcie głośnika'}
                   </span>
                   {(params.driverOffsetX !== 0 || params.driverOffsetY !== 0) && (
                     <button
@@ -1728,13 +1879,21 @@ export function SidebarControls({
                       onClick={() => onChange({ driverOffsetX: 0, driverOffsetY: 0 })}
                       className="text-[11px] text-red-400 hover:text-red-300 transition-colors"
                     >
-                      Wyśrodkuj
+                      {en ? 'Center' : 'Wyśrodkuj'}
                     </button>
                   )}
                 </div>
                 <ImmediateNumberRow
                   id="drv-offset-x"
-                  label={isBandpass ? 'Przesunięcie (Tył / Przód)' : 'Przesunięcie (Lewo / Prawo)'}
+                  label={
+                    isBandpass
+                      ? en
+                        ? 'Offset (Back / Front)'
+                        : 'Przesunięcie (Tył / Przód)'
+                      : en
+                        ? 'Offset (Left / Right)'
+                        : 'Przesunięcie (Lewo / Prawo)'
+                  }
                   value={params.driverOffsetX}
                   min={acoustics.offsetBounds.driverMinX}
                   max={acoustics.offsetBounds.driverMaxX}
@@ -1746,8 +1905,12 @@ export function SidebarControls({
                   id="drv-offset-y"
                   label={
                     params.driverFace === 'top' && !isBandpass
-                      ? 'Przesunięcie (Przód / Tył)'
-                      : 'Przesunięcie (Dół / Góra)'
+                      ? en
+                        ? 'Offset (Front / Back)'
+                        : 'Przesunięcie (Przód / Tył)'
+                      : en
+                        ? 'Offset (Bottom / Top)'
+                        : 'Przesunięcie (Dół / Góra)'
                   }
                   value={params.driverOffsetY}
                   min={acoustics.offsetBounds.driverMinY}
@@ -1760,7 +1923,7 @@ export function SidebarControls({
 
               <ImmediateNumberRow
                 id="drv-cutout"
-                label="Średnica otworu montażowego"
+                label={en ? 'Cutout Diameter' : 'Średnica otworu montażowego'}
                 value={params.driverCutoutDia}
                 min={80}
                 max={520}
@@ -1775,7 +1938,7 @@ export function SidebarControls({
               />
               <ImmediateNumberRow
                 id="drv-outer"
-                label="Średnica zewnętrzna kosza"
+                label={en ? 'Outer Frame Diameter' : 'Średnica zewnętrzna kosza'}
                 value={params.driverOuterDia}
                 min={100}
                 max={580}
@@ -1785,7 +1948,7 @@ export function SidebarControls({
               />
               <ImmediateNumberRow
                 id="drv-depth"
-                label="Głębokość montażowa"
+                label={en ? 'Mounting Depth' : 'Głębokość montażowa'}
                 value={params.driverDepth}
                 min={40}
                 max={420}
@@ -1795,7 +1958,7 @@ export function SidebarControls({
               />
               <ImmediateNumberRow
                 id="drv-disp"
-                label="Wyporność głośnika (1 szt.)"
+                label={en ? 'Driver Displacement (1 pc)' : 'Wyporność głośnika (1 szt.)'}
                 value={params.driverDisplacement}
                 min={0.2}
                 max={25}
@@ -1807,7 +1970,7 @@ export function SidebarControls({
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
                   <label htmlFor="drv-fs" className="block text-[11px] text-zinc-400 mb-1">
-                    Rezonans Fs (Hz)
+                    {en ? 'Resonance Fs (Hz)' : 'Rezonans Fs (Hz)'}
                   </label>
                   <ImmediateNumberInput
                     id="drv-fs"
@@ -1821,7 +1984,7 @@ export function SidebarControls({
                 </div>
                 <div>
                   <label htmlFor="drv-qts" className="block text-[11px] text-zinc-400 mb-1">
-                    Dobroć Qts
+                    {en ? 'Total Qts' : 'Dobroć Qts'}
                   </label>
                   <ImmediateNumberInput
                     id="drv-qts"
@@ -1835,7 +1998,7 @@ export function SidebarControls({
                 </div>
                 <div>
                   <label htmlFor="drv-vas" className="block text-[11px] text-zinc-400 mb-1">
-                    Objętość Vas (L)
+                    {en ? 'Volume Vas (L)' : 'Objętość Vas (L)'}
                   </label>
                   <ImmediateNumberInput
                     id="drv-vas"
@@ -1862,7 +2025,7 @@ export function SidebarControls({
                       className="w-1/2 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                     />
                     <ImmediateNumberInput
-                      aria-label="Moc RMS (W)"
+                      aria-label={en ? 'RMS Power (W)' : 'Moc RMS (W)'}
                       value={params.driverPowerW}
                       min={25}
                       max={15000}
@@ -1884,7 +2047,7 @@ export function SidebarControls({
           <div className="flex items-center gap-2 text-xs text-emerald-400">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>
-              Geometria poprawna · Luz za magnesem:{' '}
+              {en ? 'Geometry valid · Magnet clearance: ' : 'Geometria poprawna · Luz za magnesem: '}
               <strong className="font-mono-num">{acoustics.driverClearanceMm} mm</strong>
             </span>
           </div>

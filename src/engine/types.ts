@@ -1,3 +1,5 @@
+export type AppLanguage = 'pl' | 'en';
+
 export type EnclosureType =
   | 'vented_slot'
   | 'vented_round'
@@ -277,6 +279,8 @@ export interface DriverPreset {
 export interface BoxTemplatePreset {
   id: string;
   name: string;
+  nameEn?: string;
   description: string;
+  descriptionEn?: string;
   params: Partial<BoxParams>;
 }

@@ -136,10 +136,17 @@ Pe=750
   assert.ok((res.driver.bl ?? 0) > 5);
 });
 
-test('returns clean error for invalid or non-WDR files', () => {
-  const invalid = parseWinIsdWdr('{"not":"a wdr file"}', 'bad.json');
-  assert.equal(invalid.ok, false);
-  if (!invalid.ok) {
-    assert.ok(invalid.error.includes('WinISD .wdr'));
+test('returns clean error for invalid or non-WDR files in both PL and EN', () => {
+  const invalidPl = parseWinIsdWdr('{"not":"a wdr file"}', 'bad.json', 'auto', 'pl');
+  assert.equal(invalidPl.ok, false);
+  if (!invalidPl.ok) {
+    assert.ok(invalidPl.error.includes('WinISD .wdr'));
+  }
+
+  const invalidEn = parseWinIsdWdr('{"not":"a wdr file"}', 'bad.json', 'auto', 'en');
+  assert.equal(invalidEn.ok, false);
+  if (!invalidEn.ok) {
+    assert.ok(invalidEn.error.includes('valid WinISD .wdr'));
   }
 });
+

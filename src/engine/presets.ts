@@ -1,4 +1,4 @@
-import type { BoxParams, BoxTemplatePreset, DriverPreset } from './types';
+import type { AppLanguage, BoxParams, BoxTemplatePreset, DriverPreset } from './types';
 
 export const DRIVER_PRESETS: DriverPreset[] = [
   {
@@ -121,17 +121,25 @@ function driverPatch(preset: DriverPreset): Partial<BoxParams> {
   };
 }
 
+export function getTemplateName(tpl: BoxTemplatePreset, lang: AppLanguage = 'pl'): string {
+  return lang === 'en' && tpl.nameEn ? tpl.nameEn : tpl.name;
+}
+
 export const BOX_TEMPLATE_PRESETS: BoxTemplatePreset[] = [
   {
     id: 'daily-12-slot',
     name: 'Deaf Bonce MF-12R D2 — Szczelinowy 34 Hz',
+    nameEn: 'Deaf Bonce MF-12R D2 — Slot Port 34 Hz',
     description: 'Skrzynia pod Deaf Bonce Machete MF-12R D2 z zagiętym portem L i mocnym dołem pasma.',
+    descriptionEn: 'Enclosure for Deaf Bonce Machete MF-12R D2 with L-bent slot port and deep bass output.',
     params: { ...DEFAULT_BOX_PARAMS },
   },
   {
     id: 'dual-12-spl',
     name: '2×12" Deaf Bonce MF-12R D2 — Dual Aero 35 Hz',
+    nameEn: '2×12" Deaf Bonce MF-12R D2 — Dual Aero 35 Hz',
     description: 'Szeroka obudowa pod dwa głośniki Deaf Bonce MF-12R D2 z parą aero-portów.',
+    descriptionEn: 'Wide enclosure for two Deaf Bonce MF-12R D2 subwoofers with dual flared aero ports.',
     params: {
       enclosureType: 'vented_round',
       material: 'mdf',
@@ -154,7 +162,9 @@ export const BOX_TEMPLATE_PRESETS: BoxTemplatePreset[] = [
   {
     id: 'quad-12-spl',
     name: '4×12" Deaf Bonce MF-12R D2 — Quad Wall BR',
+    nameEn: '4×12" Deaf Bonce MF-12R D2 — Quad Wall BR',
     description: 'Układ 2×2 czterech głośników Deaf Bonce MF-12R D2 (2S2P) z dużym portem szczelinowym.',
+    descriptionEn: '2×2 quad wall layout for four Deaf Bonce MF-12R D2 drivers (2S2P) with a large slot port.',
     params: {
       enclosureType: 'vented_slot',
       material: 'birch_plywood',
@@ -177,7 +187,9 @@ export const BOX_TEMPLATE_PRESETS: BoxTemplatePreset[] = [
   {
     id: 'sealed-12-sq',
     name: '12" Deaf Bonce MF-12R D2 — Zamknięta SQ',
+    nameEn: '12" Deaf Bonce MF-12R D2 — Sealed SQ',
     description: 'Kompaktowa obudowa zamknięta Qtc ≈ 0.71 o wysokiej precyzji impulsu.',
+    descriptionEn: 'Compact sealed enclosure (Qtc ≈ 0.71) tuned for tight transient response.',
     params: {
       enclosureType: 'sealed',
       material: 'birch_plywood',
@@ -194,7 +206,9 @@ export const BOX_TEMPLATE_PRESETS: BoxTemplatePreset[] = [
   {
     id: 'bandpass-12-4th',
     name: '12" Deaf Bonce Bandpass 4-rz. (Pleksi)',
+    nameEn: '12" Deaf Bonce 4th-Order Bandpass (Acrylic)',
     description: 'Komora tylna zamknięta + komora przednia wentylowana z szybą inspekcyjną.',
+    descriptionEn: 'Sealed rear chamber + ported front chamber with an inspection window.',
     params: {
       enclosureType: 'bandpass_4th',
       material: 'mdf',
@@ -217,7 +231,9 @@ export const BOX_TEMPLATE_PRESETS: BoxTemplatePreset[] = [
   {
     id: 'bandpass-12-6th',
     name: '12" Deaf Bonce Bandpass 6-rz. (Dual-Port)',
+    nameEn: '12" Deaf Bonce 6th-Order Bandpass (Dual-Port)',
     description: 'Dwie komory wentylowane strojone na Fb-low (tył) i Fb-high (przód) dla maksymalnej sprawności.',
+    descriptionEn: 'Dual vented chambers tuned to Fb-low (rear) and Fb-high (front) for maximum output.',
     params: {
       enclosureType: 'bandpass_6th',
       material: 'birch_plywood',

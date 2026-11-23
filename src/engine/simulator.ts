@@ -8,6 +8,7 @@ import {
   type TsSolverOutput,
 } from './tsSolver';
 import type {
+  AppLanguage,
   BoxParams,
   CoilWiringMode,
   DriverPreset,
@@ -438,6 +439,7 @@ function resolveVariantDriver(
   baseParams: BoxParams,
   allDrivers: DriverPreset[],
   signal: SignalChainConfig,
+  lang: AppLanguage = 'pl',
 ): {
   name: string;
   count: number;
@@ -504,7 +506,7 @@ function resolveVariantDriver(
   const name =
     isOverride && found
       ? found.name
-      : baseParams.driverName ?? found?.name ?? 'Aktywny głośnik';
+      : baseParams.driverName ?? found?.name ?? (lang === 'en' ? 'Active driver' : 'Aktywny głośnik');
 
   return {
     name,
@@ -565,6 +567,7 @@ export function simulateEnclosureSeries(
   signal: SignalChainConfig,
   allDrivers: DriverPreset[] = DRIVER_PRESETS,
   maxFreqHz = 200,
+  lang: AppLanguage = 'pl',
 ): SimulatedSeries {
   const freqs: number[] = [];
   for (let f = 10; f <= maxFreqHz; f += 1) {
@@ -575,7 +578,7 @@ export function simulateEnclosureSeries(
   const cSpeed = Math.max(300, signal.speedOfSoundMs ?? SPEED_OF_SOUND_DEFAULT);
   const rhoC2 = rho * cSpeed * cSpeed;
 
-  const drv = resolveVariantDriver(variant, params, allDrivers, signal);
+  const drv = resolveVariantDriver(variant, params, allDrivers, signal, lang);
   const isIsobaric = Boolean(variant.isobaric);
 
   // Compute physical base Mms & Cms so Added Mass & Voice Coil Thermal Rise work faithfully
@@ -927,10 +930,23 @@ export function simulateEnclosureSeries(
   };
 }
 
-export function createLiveProjectVariant(params: BoxParams): ComparisonVariant {
-  const acoustics = calculateAcoustics(params);
-  const typeLabel =
-    params.enclosureType === 'sealed'
+export function createLiveProjectVariant(
+  params: BoxParams,
+  lang: AppLanguage = 'pl',
+): ComparisonVariant {
+  const isEn = lang === 'en';
+  const acoustics = calculateAcoustics(params, lang);
+  const typeLabel = isEn
+    ? params.enclosureType === 'sealed'
+      ? 'Sealed'
+      : params.enclosureType === 'bandpass_4th'
+        ? '4th-Order Bandpass'
+        : params.enclosureType === 'bandpass_6th'
+          ? '6th-Order Bandpass'
+          : params.enclosureType === 'vented_round'
+            ? 'Bass-Reflex (Aero)'
+            : 'Bass-Reflex (Slot)'
+    : params.enclosureType === 'sealed'
       ? 'Zamknięta'
       : params.enclosureType === 'bandpass_4th'
         ? 'Bandpass 4-rz.'
@@ -941,7 +957,7 @@ export function createLiveProjectVariant(params: BoxParams): ComparisonVariant {
             : 'Bass-Reflex (Szczel.)';
   return {
     id: 'live-project',
-    name: `Projekt główny (${typeLabel})`,
+    name: isEn ? `Main Project (${typeLabel})` : `Projekt główny (${typeLabel})`,
     color: '#ef4444',
     visible: true,
     isLiveProject: true,
@@ -969,11 +985,15 @@ export function createLiveProjectVariant(params: BoxParams): ComparisonVariant {
   };
 }
 
-export function computeDriverAlignments(params: BoxParams): {
+export function computeDriverAlignments(
+  params: BoxParams,
+  lang: AppLanguage = 'pl',
+): {
   ebpHz: number;
   recommendation: string;
   suggestions: DriverAlignmentSuggestion[];
 } {
+  const isEn = lang === 'en';
   const fs = Math.max(15, params.driverFs);
   const qts = Math.max(0.18, params.driverQts);
   const vasTotal = Math.max(4, params.driverVas * params.driverCount);
@@ -981,8 +1001,13 @@ export function computeDriverAlignments(params: BoxParams): {
   const qes = Math.max(0.18, (qts * qms) / Math.max(0.4, qms - qts));
   const ebpHz = fs / qes;
 
-  const recommendation =
-    ebpHz < 52
+  const recommendation = isEn
+    ? ebpHz < 52
+      ? 'Low EBP (< 52 Hz) — well suited for a sealed enclosure or 4th-order Bandpass.'
+      : ebpHz <= 85
+        ? 'Versatile EBP (52–85 Hz) — works well in both Bass-Reflex (QB3/SBB4) and sealed boxes.'
+        : 'High EBP (> 85 Hz) — ideal for ported Bass-Reflex and 6th-order Bandpass enclosures.'
+    : ebpHz < 52
       ? 'Niski EBP (< 52 Hz) — przetwornik świetnie sprawdzi się w obudowie zamkniętej lub Bandpass 4-go rzędu.'
       : ebpHz <= 85
         ? 'Uniwersalny EBP (52–85 Hz) — dobry zarówno do Bass-Reflex (QB3/SBB4), jak i do obudowy zamkniętej.'
@@ -1068,8 +1093,10 @@ export function computeDriverAlignments(params: BoxParams): {
       {
         id: 'align-sealed-0707',
         category: 'sealed',
-        title: 'Zamknięta B2 (Qtc ≈ 0.71)',
-        subtitle: 'Butterworth — maksymalnie płaski impuls i zwarty bas audiofilski SQ.',
+        title: isEn ? 'Sealed B2 (Qtc ≈ 0.71)' : 'Zamknięta B2 (Qtc ≈ 0.71)',
+        subtitle: isEn
+          ? 'Butterworth — maximally flat transient response and tight audiophile SQ bass.'
+          : 'Butterworth — maksymalnie płaski impuls i zwarty bas audiofilski SQ.',
         enclosureType: 'sealed',
         netVolumeL: sealedVolL,
         tuningHz: null,
@@ -1079,8 +1106,12 @@ export function computeDriverAlignments(params: BoxParams): {
       {
         id: 'align-sealed-cheb',
         category: 'sealed',
-        title: `Zamknięta Chebyshev C2 (Qtc ≈ ${qtcCheb.toFixed(2)})`,
-        subtitle: 'Czebyszew C2 (+0.7 dB) — kompaktowy litraż i mocniejszy kick w średnim basie.',
+        title: isEn
+          ? `Sealed Chebyshev C2 (Qtc ≈ ${qtcCheb.toFixed(2)})`
+          : `Zamknięta Chebyshev C2 (Qtc ≈ ${qtcCheb.toFixed(2)})`,
+        subtitle: isEn
+          ? 'Chebyshev C2 (+0.7 dB) — compact volume with stronger mid-bass punch.'
+          : 'Czebyszew C2 (+0.7 dB) — kompaktowy litraż i mocniejszy kick w średnim basie.',
         enclosureType: 'sealed',
         netVolumeL: sealedChebVolL,
         tuningHz: null,
@@ -1091,7 +1122,9 @@ export function computeDriverAlignments(params: BoxParams): {
         id: 'align-br-b4',
         category: 'vented',
         title: 'Bass-Reflex SBB4 / QB3',
-        subtitle: 'Optymalna objętość i najniższe opóźnienie grupowe dla BR.',
+        subtitle: isEn
+          ? 'Optimal volume and lowest group delay for a vented enclosure.'
+          : 'Optymalna objętość i najniższe opóźnienie grupowe dla BR.',
         enclosureType: 'vented_slot',
         netVolumeL: vbFlatL,
         tuningHz: fbFlatHz,
@@ -1101,7 +1134,9 @@ export function computeDriverAlignments(params: BoxParams): {
         id: 'align-br-cheb',
         category: 'vented',
         title: 'Bass-Reflex Chebyshev (C4)',
-        subtitle: 'Czebyszew C4 (+0.8 dB ripple) — wyższa sprawność SPL i dynamiczne zejście.',
+        subtitle: isEn
+          ? 'Chebyshev C4 (+0.8 dB ripple) — higher SPL efficiency and punchy low-end.'
+          : 'Czebyszew C4 (+0.8 dB ripple) — wyższa sprawność SPL i dynamiczne zejście.',
         enclosureType: 'vented_slot',
         netVolumeL: vbChebL,
         tuningHz: fbChebHz,
@@ -1111,7 +1146,9 @@ export function computeDriverAlignments(params: BoxParams): {
         id: 'align-br-daily',
         category: 'vented',
         title: 'Bass-Reflex EBS / Street SQL',
-        subtitle: 'Powiększona komora + niższe strojenie dla głębokiego zejścia.',
+        subtitle: isEn
+          ? 'Larger chamber + lower tuning for deep sub-bass extension.'
+          : 'Powiększona komora + niższe strojenie dla głębokiego zejścia.',
         enclosureType: 'vented_slot',
         netVolumeL: vbDailyL,
         tuningHz: fbDailyHz,
@@ -1120,8 +1157,10 @@ export function computeDriverAlignments(params: BoxParams): {
       {
         id: 'align-bp4',
         category: 'bandpass',
-        title: 'Bandpass 4-go rzędu',
-        subtitle: 'Wysoka sprawność i koncentracja energii w paśmie 40–75 Hz.',
+        title: isEn ? '4th-Order Bandpass' : 'Bandpass 4-go rzędu',
+        subtitle: isEn
+          ? 'High efficiency focusing acoustic energy in the 40–75 Hz band.'
+          : 'Wysoka sprawność i koncentracja energii w paśmie 40–75 Hz.',
         enclosureType: 'bandpass_4th',
         netVolumeL: vbBp4L,
         tuningHz: fbBp4Hz,

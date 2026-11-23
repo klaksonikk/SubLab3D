@@ -18,6 +18,7 @@ import { SheetNestingView } from './components/SheetNestingView';
 import { AcousticWorkbench } from './components/AcousticWorkbench';
 import { ShareModal } from './components/ShareModal';
 import { DriverTsModal } from './components/DriverTsModal';
+import { useI18n } from './i18n';
 
 type ActiveView = '3d' | 'chart' | 'workbench' | 'cutlist' | 'nesting';
 
@@ -159,6 +160,8 @@ function loadInitialState(): {
 }
 
 export default function App() {
+  const { lang, setLang } = useI18n();
+  const isEn = lang === 'en';
   const initial = useMemo(() => loadInitialState(), []);
   const [params, setParams] = useState<BoxParams>(initial.params);
   const [customDrivers, setCustomDrivers] = useState<DriverPreset[]>(initial.customDrivers);
@@ -196,9 +199,15 @@ export default function App() {
     }
   }, [customDrivers]);
 
-  const acoustics = useMemo(() => calculateAcoustics(params), [params]);
-  const cutPanels = useMemo(() => generateCutList(params, acoustics), [params, acoustics]);
-  const sheetSummary = useMemo(() => optimizeCutSheet(params, cutPanels), [params, cutPanels]);
+  const acoustics = useMemo(() => calculateAcoustics(params, lang), [params, lang]);
+  const cutPanels = useMemo(
+    () => generateCutList(params, acoustics, lang),
+    [params, acoustics, lang],
+  );
+  const sheetSummary = useMemo(
+    () => optimizeCutSheet(params, cutPanels, lang),
+    [params, cutPanels, lang],
+  );
 
   const allDrivers = useMemo(
     () => [...DRIVER_PRESETS, ...customDrivers],
@@ -279,37 +288,45 @@ export default function App() {
     setDriverModalOpen(true);
   };
 
-  const navItems: Array<{ id: ActiveView; label: string; shortLabel: string }> = [
-    { id: '3d', label: 'Projekt 3D', shortLabel: 'Projekt 3D' },
-    { id: 'chart', label: 'Charakterystyka SPL', shortLabel: 'Wykres SPL' },
-    { id: 'workbench', label: 'WSD', shortLabel: 'WSD' },
-    { id: 'cutlist', label: 'Lista Cięcia', shortLabel: 'Lista Cięcia' },
-    { id: 'nesting', label: 'Rozkrój Płyty', shortLabel: 'Rozkrój' },
-  ];
+  const navItems: Array<{ id: ActiveView; label: string; shortLabel: string }> = isEn
+    ? [
+        { id: '3d', label: '3D Project', shortLabel: '3D View' },
+        { id: 'chart', label: 'SPL Response', shortLabel: 'SPL Chart' },
+        { id: 'workbench', label: 'WSD', shortLabel: 'WSD' },
+        { id: 'cutlist', label: 'Cut-List', shortLabel: 'Cut-List' },
+        { id: 'nesting', label: 'Sheet Nesting', shortLabel: 'Nesting' },
+      ]
+    : [
+        { id: '3d', label: 'Projekt 3D', shortLabel: 'Projekt 3D' },
+        { id: 'chart', label: 'Charakterystyka SPL', shortLabel: 'Wykres SPL' },
+        { id: 'workbench', label: 'WSD', shortLabel: 'WSD' },
+        { id: 'cutlist', label: 'Lista Cięcia', shortLabel: 'Lista Cięcia' },
+        { id: 'nesting', label: 'Rozkrój Płyty', shortLabel: 'Rozkrój' },
+      ];
 
   return (
     <div className="min-h-screen lg:h-screen flex flex-col bg-[#0A0B0E] text-[#F4F4F5] overflow-x-clip lg:overflow-hidden">
       {/* Top Bar: single row on lg+, two compact sticky rows on mobile/tablet */}
       <header className="sticky top-0 z-30 lg:static shrink-0 bg-[#111318] border-b border-white/[0.08]">
-        <div className="h-13 lg:h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-6">
+        <div className="h-13 lg:h-14 px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-6">
           <a
             href="#top"
             onClick={(e) => {
               e.preventDefault();
               setActiveView('3d');
             }}
-            aria-label="SubLab 3D — Strona główna"
+            aria-label={isEn ? 'SubLab 3D — Home' : 'SubLab 3D — Strona główna'}
             className="flex items-center shrink-0 focus:outline-none"
           >
             <img
               src="./assets/sublab3d-logo-wide.png"
               alt="SubLab 3D — Precision Bass Management"
-              className="h-7 sm:h-9 lg:h-10 w-auto object-contain select-none"
+              className="h-6 sm:h-9 lg:h-10 w-auto object-contain select-none"
             />
           </a>
 
           <nav
-            aria-label="Główna nawigacja widoku"
+            aria-label={isEn ? 'Main view navigation' : 'Główna nawigacja widoku'}
             className="hidden lg:flex items-center gap-6 overflow-x-auto"
           >
             {navItems.map((item) => (
@@ -329,33 +346,67 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="shrink-0 flex items-center gap-2">
+          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
+            {/* Language Switcher PL | EN */}
+            <div
+              role="group"
+              aria-label={isEn ? 'Interface language' : 'Język interfejsu'}
+              className="inline-flex items-center bg-[#0A0B0E] border border-white/[0.14] rounded-md p-0.5 shrink-0"
+            >
+              <button
+                type="button"
+                data-testid="lang-btn-pl"
+                onClick={() => setLang('pl')}
+                aria-pressed={lang === 'pl'}
+                className={`px-1.5 sm:px-2 py-1 text-[11px] font-semibold rounded transition-colors ${
+                  lang === 'pl'
+                    ? 'bg-red-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                PL
+              </button>
+              <button
+                type="button"
+                data-testid="lang-btn-en"
+                onClick={() => setLang('en')}
+                aria-pressed={lang === 'en'}
+                className={`px-1.5 sm:px-2 py-1 text-[11px] font-semibold rounded transition-colors ${
+                  lang === 'en'
+                    ? 'bg-red-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                EN
+              </button>
+            </div>
+
             <button
               type="button"
               data-testid="mobile-params-toggle"
               onClick={() => setMobileParamsOpen(true)}
               aria-expanded={mobileParamsOpen}
-              className="lg:hidden inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-100 bg-[#161920] border border-white/[0.14] rounded-md hover:bg-white/[0.08] transition-colors whitespace-nowrap shrink-0"
+              className="lg:hidden inline-flex items-center gap-1 px-2 py-1.5 text-[11px] sm:text-xs font-medium text-zinc-100 bg-[#161920] border border-white/[0.14] rounded-md hover:bg-white/[0.08] transition-colors whitespace-nowrap shrink-0"
             >
               <Sliders className="w-3.5 h-3.5 text-red-400" />
-              <span>Parametry</span>
+              <span>{isEn ? 'Params' : 'Parametry'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setShareModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-2 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
             >
               <Share2 className="w-3.5 h-3.5" />
-              <span className="sm:hidden">Udostępnij</span>
-              <span className="hidden sm:inline">Udostępnij model</span>
+              <span className="sm:hidden">{isEn ? 'Share' : 'Udostępnij'}</span>
+              <span className="hidden sm:inline">{isEn ? 'Share model' : 'Udostępnij model'}</span>
             </button>
           </div>
         </div>
 
         {/* Mobile / Tablet View Navigation Bar */}
         <nav
-          aria-label="Nawigacja mobilna widoku"
+          aria-label={isEn ? 'Mobile view navigation' : 'Nawigacja mobilna widoku'}
           className="lg:hidden border-t border-white/[0.06] px-2 flex items-center justify-between sm:justify-start sm:gap-4 overflow-x-auto no-scrollbar"
         >
           {navItems.map((item) => (

@@ -306,3 +306,32 @@ test('DVC coil wiring (parallel vs series) scales simulated electrical impedance
   assert.ok(serRes.minImpedanceOhms > parRes.minImpedanceOhms * 3.5);
 });
 
+test('engine localization outputs clean English labels for alignments, live variants, and acoustics warnings when lang="en"', () => {
+  const liveEn = createLiveProjectVariant(DEFAULT_BOX_PARAMS, 'en');
+  assert.ok(liveEn.name.includes('Main Project'), `Expected English live variant name, got: ${liveEn.name}`);
+
+  const alignmentsEn = computeDriverAlignments(DEFAULT_BOX_PARAMS, 'en');
+  assert.equal(alignmentsEn.suggestions.length, 6);
+  assert.ok(alignmentsEn.recommendation.includes('EBP'), 'Expected EBP recommendation in English');
+  assert.ok(
+    alignmentsEn.suggestions.some((s) => s.title.includes('Sealed') || s.title.includes('Bandpass')),
+    'Expected English alignment titles',
+  );
+
+  const tightAcousticsEn = calculateAcoustics(
+    {
+      ...DEFAULT_BOX_PARAMS,
+      externalWidth: 320,
+      externalHeight: 320,
+      externalDepth: 220,
+      portLength: 780,
+    },
+    'en',
+  );
+  assert.ok(
+    tightAcousticsEn.issues.some((w) => /fit|depth|port|clearance|chamber|mm|driver|magnet/i.test(w.message)),
+    'Expected English geometry validation issues',
+  );
+});
+
+

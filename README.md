@@ -1,116 +1,128 @@
-# SubLab 3D — Projektant Obudów Subwooferowych CAD & Laboratorium T-S (WSD)
+# SubLab 3D — Parametric Subwoofer Enclosure CAD & Thiele-Small Laboratory (WSD)
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178C6?logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![Three.js](https://img.shields.io/badge/Three.js-CAD%203D-000000?logo=threedotjs&logoColor=white)
-**SubLab 3D** to zaawansowana aplikacja inżynierska do projektowania obudów car-audio i home-audio w 3D, symulacji akustycznej Thiele-Small (moduł **WSD**), generowania list cięcia oraz optymalizacji rozkroju płyt stolarskich.
+
+**SubLab 3D** is a precision engineering web application for designing 3D subwoofer enclosures, running WinISD-style Thiele-Small acoustic simulations (**WSD**), generating woodworking cut lists, and optimizing panel sheet nesting. It includes a full **bilingual interface (`EN` / `PL`)** and a **responsive mobile layout** for phones and desktops.
 
 ---
 
-## Spis treści
+## Table of Contents
 
-- [Kluczowe możliwości](#kluczowe-możliwości)
-- [Laboratorium WSD (Analiza T-S)](#laboratorium-wsd-analiza-t-s)
-- [Przykładowe porównanie — Deaf Bonce Machete MF-12R D2](#przykładowe-porównanie--deaf-bonce-machete-mf-12r-d2)
-- [Testy jednostkowe i weryfikacja](#testy-jednostkowe-i-weryfikacja)
-- [Architektura projektu](#architektura-projektu)
-
----
-
-## Kluczowe możliwości
-
-### 1. Parametryczny projektant 3D CAD (Three.js)
-- **5 typów obudów**:
-  - `Bass-Reflex Szczelinowy` (automatyczne zagięcie portu w kształt **L**, brak nachodzenia krawędzi ścianek, konfiguracja strony wylotu: prawa / lewa / dół),
-  - `Bass-Reflex Okrągły / Aero` (1–4 rury, montaż na froncie, górze lub boku, przesunięcia X/Y i kontrola kolizji),
-  - `Zamknięta (Sealed)`,
-  - `Bandpass 4-go rzędu` (komora zamknięta + wentylowana z szybą akrylową),
-  - `Bandpass 6-go rzędu` (dwie niezależnie strojone komory i dwa porty).
-- **Tryb sprzężonego rozwiązywania geometrii**: automatyczne wyliczanie `Szerokości (W)`, `Wysokości (H)`, `Głębokości (D)` lub `Objętości (Vnet)` przy zachowaniu zadanego `Vnet`, strojenia `Fb` oraz przekroju portu `S`.
-- **Układy wielogłośnikowe (1–6 głośników)**: automatyczne rozmieszczanie siatkowe i naprzemienne (*staggered / Quincunx*) z kontrolą luzu za magnesem i krawędzi montażowych.
-- **Podgląd CAD**: tryby `X-Ray`, `Pełny`, `Szkielet`, widok rozstrzelony (*Exploded View*), siatka CAD, materiały (`Sklejka brzozowa`, `MDF`, `Laminat czarny`), podwójna ścianka przednia (`2×`).
-
-### 2. Lista cięcia i rozkrój płyty (`Cut-List` & `Sheet Nesting`)
-- **3 standardy łączenia płyt**: wieńce góra/dół na bokach, boki pełne, front i tył nakładane na całość.
-- **Zestawienie formatek** uwzględniające grubość płyty (`15–25 mm`), podwójny front oraz przegrody portu szczelinowego / komór Bandpass.
-- **Rozkrój na arkuszach** (m.in. `2500 × 1250 mm`) z wizualizacją wykorzystania materiału i odpadu.
-
-### 3. Udostępnianie i pełny tryb offline
-- Zapis projektu i bazy własnych głośników w `localStorage`, eksport/import bazy przetworników `.json` oraz udostępnianie konfiguracji jednym linkiem (`?model=...`).
+- [Key Capabilities](#key-capabilities)
+- [WSD Laboratory (Thiele-Small Analysis & `.wdr` Import)](#wsd-laboratory-thiele-small-analysis--wdr-import)
+- [Example Acoustic Benchmark (12" DVC Driver)](#example-acoustic-benchmark-12-dvc-driver)
+- [Unit Tests & Verification](#unit-tests--verification)
+- [Project Architecture](#project-architecture)
 
 ---
 
-## Laboratorium WSD (Analiza T-S)
+## Key Capabilities
 
-Zakładka **WSD** umożliwia precyzyjną analizę i porównanie do **4 projektów jednocześnie** oraz jest możliwość importu plików .wdr z winisd:
+### 1. Parametric 3D CAD Designer (Three.js)
+- **5 enclosure topologies**:
+  - `Slot Port Bass-Reflex` (automatic **L-bent** port folding with zero overlapping walls and selectable outlet side: right / left / bottom),
+  - `Round / Aero Port Bass-Reflex` (1–4 pipes mounted on front, top, or side with X/Y offsets and collision checks),
+  - `Sealed`,
+  - `4th-Order Bandpass` (sealed rear + vented front chamber with acrylic inspection window),
+  - `6th-Order Bandpass` (dual independently tuned chambers and dual ports).
+- **Coupled geometry solver**: automatically solves `Width (W)`, `Height (H)`, `Depth (D)`, or `Net Volume (Vnet)` while holding target `Vnet`, tuning `Fb`, and port area `S`.
+- **Multi-driver layouts (1–6 drivers)**: automatic grid and staggered (*Quincunx*) placement with magnet depth clearance and baffle margin checks.
+- **Interactive CAD viewport**: `X-Ray`, `Solid`, and `Wireframe` modes, `Exploded View`, CAD measurement grid, procedural materials (`Birch Plywood`, `MDF`, `Black Laminate`), optional `2×` double front baffle, and a slide-over **mobile controls drawer** on narrow phone screens.
 
-| Obszar | Funkcje |
+### 2. Cut-List & Sheet Nesting (`Cut-List` & `Sheet Nesting`)
+- **3 joinery standards**: top/bottom over sides, full-height sides, front & back overlapping all walls.
+- **Detailed panel schedule**: accounts for material thickness (`15–25 mm`), double front baffle, slot-port dividers, and bandpass internal walls, with CSV export.
+- **2D sheet nesting optimizer**: packs panels onto standard wood sheets (e.g., `2500 × 1250 mm`) with saw-kerf allowance, utilization percentage, and waste metrics.
+
+### 3. Bilingual UI, Sharing & Offline Persistence
+- **Instant `PL / EN` toggle** in the top header (persisted in `localStorage` and `?lang=en|pl` URL parameter).
+- **Offline-ready persistence**: projects and custom drivers stored in `localStorage`, JSON driver database export/import, and single-URL project sharing (`?model=...`).
+
+---
+
+## WSD Laboratory (Thiele-Small Analysis & `.wdr` Import)
+
+The **WSD** workspace compares up to **4 enclosure variants simultaneously** and supports direct import of **WinISD `.wdr` driver files**:
+
+| Module | Features |
 | :--- | :--- |
-| **Baza i kreator T-S** | Dodawanie własnych głośników z automatycznym solverem zależności: triada `Qts / Qes / Qms`, `Fs / Vas ↔ Mms / Cms`, `Bl`, `Sd`, `η₀`, `SPL (1W/1m)`, `EBP`, `Vd`, kompresja termiczna cewki (`ΔT`, współczynnik temperaturowy), dodana masa membrany, układ **Iso-Barik** oraz konfiguracje cewek (`Parallel / Series / Series-Parallel`). |
-| **Wyrównania (Alignments)** | Automatyczne propozycje na podstawie `EBP` i `Qts`: `Zamknięta B2`, `Zamknięta Chebyshev C2`, `Bass-Reflex SBB4 / QB3`, `Bass-Reflex Chebyshev (C4)`, `Bass-Reflex EBS / Street SQL`, `Bandpass 4-rz.`. |
-| **Kalkulator portów** | Tryb **Rurowy (Okrągły)** (`1–4× Ø`, presety PVC/Aero `Ø75–Ø200 mm`, przycisk `Auto <17 m/s`, zakończenie `Aero-Flare k=0.732` vs `Prosta rura k=0.85`) oraz **Szczelinowy / Pole S**, wraz z wyliczaniem 1. rezonansu organowego tunelu. |
-| **17 krzywych pomiarowych** | Charakterystyka `EQ/Filtry` i `Box`, `SPL (dB)`, `Max SPL` (ograniczony przez `Xmax` i moc `RMS`), `Max Power (W)`, `Apparent Load (VA)`, `Wychył membrany (mm)`, `Prędkość powietrza` i `Wzmocnienie` portu przedniego/tylnego, `Group Delay`, `Faza`, `Impedancja (Ω)` oraz `Faza impedancji`. |
-| **Filtry DSP i akustyka auta** | Filtry **Butterworth 12/24 dB**, **Linkwitz-Riley 24 dB**, **Chebyshev 12/24 dB (Czebyszew)**, korektor **PEQ**, **Linkwitz Transform**, środowiska `4π`, `2π`, `π`, `Kabina auta` (Cabin Gain) oraz generator sygnału sinusoidalnego **Web Audio API (offline)**. |
+| **Driver Database, T-S Solver & `.wdr` Import** | Import WinISD `.wdr` driver definitions (auto-detecting SI vs. practical units, European comma decimals, scientific notation, and `H-c/H-g` excursion fallback) or build custom drivers with automatic T-S solving (`Qts / Qes / Qms`, `Fs / Vas ↔ Mms / Cms`, `Bl`, `Sd`, `η₀`, `SPL 1W/1m`, `EBP`, `Vd`), thermal voice-coil compression (`ΔT`), added cone mass, **Iso-Barik** loading, and coil/array wiring (`Parallel / Series / Series-Parallel`). |
+| **Enclosure Alignments** | Automatic `EBP` / `Qts` recommendations: `Sealed B2`, `Sealed Chebyshev C2`, `Bass-Reflex SBB4 / QB3`, `Bass-Reflex Chebyshev (C4)`, `Bass-Reflex EBS / Street SQL`, and `4th-Order Bandpass`. |
+| **Port Calculator** | **Round / Aero** (`1–4× Ø`, PVC/Aero presets `Ø75–Ø200 mm`, `Auto <17 m/s` sizer, `Aero-Flare k=0.732` vs `Straight pipe k=0.85`) and **Slot / Area S**, including 1st pipe organ resonance calculation. |
+| **17 Simulation Curves** | `EQ/Filters` & `Box` transfer, `SPL (dB)`, `Max SPL` (`Xmax` & `RMS` limited), `Max Power (W)`, `Apparent Load (VA)`, `Cone Excursion (mm)`, front/rear port `Air Velocity` & `Port Gain`, `Group Delay`, `Phase`, `Impedance (Ω)`, and `Impedance Phase`. |
+| **DSP Filters & Cabin Acoustics** | **Butterworth 12/24 dB**, **Linkwitz-Riley 24 dB**, **Chebyshev 12/24 dB**, **PEQ**, **Linkwitz Transform**, `4π / 2π / π / Cabin Gain` environments, and a **Web Audio API 0 dBFS sine generator**. |
 
 ---
 
-## Przykładowe porównanie — Deaf Bonce Machete MF-12R D2
+## Example Acoustic Benchmark (12" DVC Driver)
 
-Wbudowany preset **`Deaf Bonce Machete MF-12R D2 (1200W)`** odwzorowuje parametry katalogowe przetwornika (połączenie szeregowe cewek `1.8 + 1.8 Ω = 3.6 Ω`):
+Using the built-in example 12" dual-voice-coil subwoofer preset (`1.8 + 1.8 Ω = 3.6 Ω` series wiring):
 
-| Parametr | Wartość |
+| Parameter | Value |
 | :--- | :--- |
 | `Fs` / `Vas` / `Qts` | **37.6 Hz** / **24.8 L** / **0.470** (`Qes = 0.525`, `Qms = 4.49`) |
 | `Re` / `Xmax` / `RMS` | **3.6 Ω** / **15 mm** / **1200 W** (`2400 W MAX`) |
 | `SPL (1W/1m)` / `EBP` / `Vd` | **86.0 dB** / **71.6 Hz** / **720 cm³** (`Sd = 480 cm²`) |
-| Wymiary montażowe | Otwór **282 mm** · Głębokość **162 mm** · Wyporność **3.6 L** |
+| Mounting dimensions | Cutout **282 mm** · Depth **162 mm** · Displacement **3.6 L** |
 
-Przykładowa obudowa szczelinowa (`680 × 380 mm`, płyta `18 mm`, `55.0 L netto`, `Fb = 35.0 Hz`, port `180 cm²`):
-- **Głębokość zewnętrzna**: `373.8 mm` (`Brutto = 74.82 L`)
-- **Długość portu**: `657.1 mm` (wyporność `15.02 L`, odpowiednik `2× Ø100 mm Aero-Flare` ≈ `622 mm`)
-- **Symulacja `1200 W` (`4π`)**: `Peak SPL = 118.9 dB`, `F3 = 32 Hz`, prędkość w porcie `9.5 m/s` (`< 17 m/s`)
+Sample slot-ported enclosure (`680 × 380 mm`, `18 mm` birch plywood, `55.0 L` net, `Fb = 35.0 Hz`, `180 cm²` port):
+- **External depth**: `373.8 mm` (`Gross = 74.82 L`)
+- **Port length**: `657.1 mm` (displacement `15.02 L`, equivalent to `2× Ø100 mm Aero-Flare` ≈ `622 mm`)
+- **`1200 W` (`4π`) simulation**: `Peak SPL = 118.9 dB`, `F3 = 32 Hz`, port air velocity `9.5 m/s` (`< 17 m/s`)
 
 ---
 
-## Testy jednostkowe i weryfikacja
+## Unit Tests & Verification
 
-Logika akustyczna, solver T-S, układanie płyt i symulator WSD są pokryte **27 testami jednostkowymi** (`node:test`):
+The acoustic solver, T-S solver, WinISD `.wdr` parser, cut-list/sheet-nesting engine, and WSD simulator are verified by **39 unit tests** (`node:test` via `tsx`):
 
 ```bash
-# Uruchomienie wszystkich testów fizyki akustycznej, solvera T-S i symulatora
+# Run all acoustic, T-S solver, .wdr parser, and WSD simulator unit tests
 npx --yes tsx --test \
   src/engine/acoustics.test.ts \
   src/engine/simulator.test.ts \
   src/engine/tsSolver.test.ts \
+  src/engine/winisdWdr.test.ts \
   src/engine/referenceComparison.test.ts
 
-# Weryfikacja typów TypeScript
+# TypeScript type-checking
 npm run lint
+
+# Production build
+npm run build
 ```
 
-## Architektura projektu
+---
+
+## Project Architecture
 
 ```text
 └── src/
+    ├── i18n.tsx                     # Bilingual PL/EN LanguageProvider & locale helpers
     ├── engine/
-    │   ├── acoustics.ts             # Solver wymiarów, Helmholtz Fb, porty L/Aero, kolizje
-    │   ├── simulator.ts             # Symulator WSD (17 krzywych, filtry DSP, wyrównania)
-    │   ├── tsSolver.ts              # Kalkulator T-S (triada Q, Mms/Cms, Bl, SPL, budowa presetu)
-    │   ├── cutlist.ts               # Lista cięcia i optymalizacja rozkroju arkuszy
-    │   ├── sceneBuilder.ts          # Generator geometrii 3D Three.js
-    │   ├── materials3d.ts          # Proceduralne tekstury sklejki, MDF i laminatu
-    │   ├── presets.ts               # Baza przetworników i gotowych szablonów obudów
-    │   ├── sharing.ts               # Serializacja projektów do linków URL
-    │   ├── types.ts                 # Typy TypeScript domeny CAD/T-S
-    │   └── *.test.ts                # Zestaw 27 testów jednostkowych
+    │   ├── acoustics.ts             # Coupled CAD dimension solver, Helmholtz Fb, L/Aero ports, collisions
+    │   ├── simulator.ts             # WSD simulator (17 curves, DSP filters, alignments)
+    │   ├── tsSolver.ts              # Thiele-Small solver (Q triad, Mms/Cms, Bl, SPL, preset builder)
+    │   ├── winisdWdr.ts             # WinISD .wdr INI parser & SI/practical unit auto-detection
+    │   ├── cutlist.ts               # Panel cut-list generator & 2D sheet nesting optimizer
+    │   ├── sceneBuilder.ts          # Three.js parametric 3D geometry generator
+    │   ├── materials3d.ts           # Procedural birch plywood, MDF, and laminate textures
+    │   ├── presets.ts               # Built-in driver preset & enclosure templates
+    │   ├── sharing.ts               # URL model token serialization/deserialization
+    │   ├── types.ts                 # CAD & Thiele-Small TypeScript domain types
+    │   └── *.test.ts                # 39 unit tests (physics, solver, WSD, .wdr, i18n)
     └── components/
-        ├── AcousticWorkbench.tsx    # Główny panel laboratorium WSD
-        ├── DriverTsModal.tsx        # Modal dodawania/edycji własnych głośników T-S
-        ├── Viewport3D.tsx           # Scena Three.js, kamery CAD, tryby X-Ray/Szkielet
-        ├── SidebarControls.tsx      # Panel parametrów obudowy, portu i przetwornika
-        ├── TelemetryStrip.tsx       # Pasek metryk na żywo (Vnet, Fb, S, prędkość m/s)
-        ├── AcousticChart.tsx        # Szybki wykres charakterystyki SPL
-        ├── CutListView.tsx          # Tabela cięcia płyt i eksport
-        ├── SheetNestingView.tsx     # Wizualizacja rozkroju na arkuszu
-        └── ShareModal.tsx           # Udostępnianie i import konfiguracji
+        ├── AcousticWorkbench.tsx    # WSD laboratory & multi-variant comparison workbench
+        ├── DriverTsModal.tsx        # Custom T-S driver & .wdr import modal
+        ├── Viewport3D.tsx           # Three.js CAD viewport, cameras, X-Ray/Wireframe/Exploded modes
+        ├── SidebarControls.tsx      # Enclosure, port & driver parameter controls (responsive drawer)
+        ├── TelemetryStrip.tsx       # Live acoustic metrics strip (Vnet, Fb, S, air velocity)
+        ├── AcousticChart.tsx        # Quick SPL response chart
+        ├── CutListView.tsx          # Panel cut-list table & CSV export
+        ├── SheetNestingView.tsx     # 2D sheet nesting visualizer
+        ├── ShareModal.tsx           # Project sharing & JSON import/export modal
+        └── ImmediateNumberInput.tsx # Responsive numeric input control
 ```
+

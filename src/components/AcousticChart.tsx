@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AcousticResult, BoxParams } from '../engine/types';
+import { useI18n } from '../i18n';
 
 interface AcousticChartProps {
   params: BoxParams;
@@ -7,6 +8,8 @@ interface AcousticChartProps {
 }
 
 export function AcousticChart({ params, acoustics }: AcousticChartProps) {
+  const { lang } = useI18n();
+  const isEn = lang === 'en';
   const [hoverHz, setHoverHz] = useState<number | null>(null);
   const [chartMode, setChartMode] = useState<'spl' | 'velocity' | 'excursion'>('spl');
 
@@ -72,14 +75,20 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
     <div className="flex-1 overflow-y-auto cad-scroll p-3.5 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-base sm:text-lg font-semibold text-white">Charakterystyka przenoszenia i dynamika portu</h2>
+          <h2 className="text-base sm:text-lg font-semibold text-white">
+            {isEn ? 'Frequency response & port dynamics' : 'Charakterystyka przenoszenia i dynamika portu'}
+          </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            Symulacja Thiele-Small (15–150 Hz) · Głośnik Fs {params.driverFs} Hz · Qts {params.driverQts} · Vas{' '}
-            {params.driverVas} L
+            {isEn ? 'Thiele-Small Simulation (15–150 Hz) · Driver' : 'Symulacja Thiele-Small (15–150 Hz) · Głośnik'} Fs{' '}
+            {params.driverFs} Hz · Qts {params.driverQts} · Vas {params.driverVas} L
           </p>
         </div>
 
-        <div className="w-full sm:w-auto grid grid-cols-3 sm:flex items-center gap-1 p-1 bg-[#161920] border border-white/10 rounded-md" role="group" aria-label="Tryb wykresu">
+        <div
+          className="w-full sm:w-auto grid grid-cols-3 sm:flex items-center gap-1 p-1 bg-[#161920] border border-white/10 rounded-md"
+          role="group"
+          aria-label={isEn ? 'Chart mode' : 'Tryb wykresu'}
+        >
           <button
             type="button"
             onClick={() => setChartMode('spl')}
@@ -88,7 +97,7 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
             }`}
           >
             <span className="sm:hidden">SPL (dB)</span>
-            <span className="hidden sm:inline">Krzywa SPL (dB)</span>
+            <span className="hidden sm:inline">{isEn ? 'SPL Curve (dB)' : 'Krzywa SPL (dB)'}</span>
           </button>
           <button
             type="button"
@@ -98,7 +107,7 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
             }`}
           >
             <span className="sm:hidden">Port (m/s)</span>
-            <span className="hidden sm:inline">Prędkość w porcie (m/s)</span>
+            <span className="hidden sm:inline">{isEn ? 'Port Velocity (m/s)' : 'Prędkość w porcie (m/s)'}</span>
           </button>
           <button
             type="button"
@@ -107,8 +116,8 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
               chartMode === 'excursion' ? 'bg-red-600 text-white' : 'text-zinc-300 hover:text-white'
             }`}
           >
-            <span className="sm:hidden">Wychył (mm)</span>
-            <span className="hidden sm:inline">Wychył membrany (mm)</span>
+            <span className="sm:hidden">{isEn ? 'Excur. (mm)' : 'Wychył (mm)'}</span>
+            <span className="hidden sm:inline">{isEn ? 'Cone Excursion (mm)' : 'Wychył membrany (mm)'}</span>
           </button>
         </div>
       </div>
@@ -270,27 +279,40 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
         <div className="mt-3 pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 text-xs">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono-num">
             <span className="text-zinc-400">
-              Częstotliwość:{' '}
-              <strong className="text-white">{hoveredPoint ? `${hoveredPoint.hz} Hz` : 'Dotknij wykres'}</strong>
+              {isEn ? 'Frequency:' : 'Częstotliwość:'}{' '}
+              <strong className="text-white">
+                {hoveredPoint ? `${hoveredPoint.hz} Hz` : isEn ? 'Inspect chart' : 'Dotknij wykres'}
+              </strong>
             </span>
             {hoveredPoint && (
               <>
                 <span className="text-zinc-400">
-                  Poziom: <strong className="text-red-400">{hoveredPoint.splDb.toFixed(1)} dB</strong>
+                  {isEn ? 'Level:' : 'Poziom:'} <strong className="text-red-400">{hoveredPoint.splDb.toFixed(1)} dB</strong>
                 </span>
                 {params.enclosureType !== 'sealed' && (
                   <span className="text-zinc-400">
-                    Prędkość portu: <strong className="text-cyan-300">{hoveredPoint.portVelocityMs.toFixed(1)} m/s</strong>
+                    {isEn ? 'Port velocity:' : 'Prędkość portu:'}{' '}
+                    <strong className="text-cyan-300">{hoveredPoint.portVelocityMs.toFixed(1)} m/s</strong>
                   </span>
                 )}
                 <span className="text-zinc-400">
-                  Wychył: <strong className="text-white">{hoveredPoint.excursionMm.toFixed(1)} mm</strong>
+                  {isEn ? 'Excursion:' : 'Wychył:'}{' '}
+                  <strong className="text-white">{hoveredPoint.excursionMm.toFixed(1)} mm</strong>
                 </span>
               </>
             )}
           </div>
           <div className="text-[11px] text-zinc-500">
-            Linia przerywana: {chartMode === 'spl' ? '0 dB / -3 dB' : chartMode === 'velocity' ? 'Próg świstu 25 m/s' : `Limit Xmax (${params.driverXmax} mm)`}
+            {isEn ? 'Dashed line:' : 'Linia przerywana:'}{' '}
+            {chartMode === 'spl'
+              ? '0 dB / -3 dB'
+              : chartMode === 'velocity'
+                ? isEn
+                  ? 'Chuffing threshold 25 m/s'
+                  : 'Próg świstu 25 m/s'
+                : isEn
+                  ? `Xmax limit (${params.driverXmax} mm)`
+                  : `Limit Xmax (${params.driverXmax} mm)`}
           </div>
         </div>
       </div>
@@ -298,39 +320,53 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
       {/* Acoustic Summary Interpretation */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4">
-          <div className="text-xs text-zinc-400">Dolne pasmo (-3 dB)</div>
+          <div className="text-xs text-zinc-400">
+            {isEn ? 'Low-end rolloff (-3 dB)' : 'Dolne pasmo (-3 dB)'}
+          </div>
           <div className="font-mono-num text-xl font-semibold text-white mt-1">
             {acoustics.f3LowHz} Hz
             {acoustics.f3HighHz ? ` – ${acoustics.f3HighHz} Hz` : ''}
           </div>
           <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
-            Punkt spadku efektywności o 3 dB w wolnej przestrzeni (bez uwzględnienia podbicia kabiny samochodu +6..12 dB/okt).
+            {isEn
+              ? 'Free-air -3 dB cutoff point (excluding vehicle cabin gain of +6..12 dB/oct).'
+              : 'Punkt spadku efektywności o 3 dB w wolnej przestrzeni (bez uwzględnienia podbicia kabiny samochodu +6..12 dB/okt).'}
           </p>
         </div>
 
         <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4">
-          <div className="text-xs text-zinc-400">Bezpieczny filtr Subsonic</div>
+          <div className="text-xs text-zinc-400">
+            {isEn ? 'Safe Subsonic filter' : 'Bezpieczny filtr Subsonic'}
+          </div>
           <div className="font-mono-num text-xl font-semibold text-cyan-300 mt-1">
             {params.enclosureType === 'sealed'
-              ? 'Opcjonalny (18 Hz)'
+              ? isEn
+                ? 'Optional (18 Hz)'
+                : 'Opcjonalny (18 Hz)'
               : acoustics.tuningHz
                 ? `${Math.max(18, Math.round(acoustics.tuningHz * 0.78))} Hz`
                 : '24 Hz'}
           </div>
           <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
-            Zalecana częstotliwość filtra górnoprzepustowego chroniącego cewkę przed nadmiernym wychyłem poniżej strojenia.
+            {isEn
+              ? 'Recommended high-pass filter frequency to protect the voice coil from unloading below tuning.'
+              : 'Zalecana częstotliwość filtra górnoprzepustowego chroniącego cewkę przed nadmiernym wychyłem poniżej strojenia.'}
           </p>
         </div>
 
         <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4">
-          <div className="text-xs text-zinc-400">Stosunek portu do objętości</div>
+          <div className="text-xs text-zinc-400">
+            {isEn ? 'Port area per liter' : 'Stosunek portu do objętości'}
+          </div>
           <div className="font-mono-num text-xl font-semibold text-white mt-1">
             {params.enclosureType === 'sealed'
               ? '—'
               : `${acoustics.portAreaPerLiterCm2.toFixed(2)} cm²/L`}
           </div>
           <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
-            Optymalny zakres dla obudów codziennych i SQL wynosi 11–16 cm² przekroju portu na każdy litr objętości netto.
+            {isEn
+              ? 'Optimal range for daily & SQL enclosures is 11–16 cm² of port area per net liter.'
+              : 'Optymalny zakres dla obudów codziennych i SQL wynosi 11–16 cm² przekroju portu na każdy litr objętości netto.'}
           </p>
         </div>
       </div>

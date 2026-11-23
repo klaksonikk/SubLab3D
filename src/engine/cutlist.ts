@@ -1,7 +1,19 @@
 import { resolveEffectiveFaces } from './acoustics';
-import type { AcousticResult, BoxParams, CutSheetSummary, PanelCut, PlacedPanel } from './types';
+import type {
+  AcousticResult,
+  AppLanguage,
+  BoxParams,
+  CutSheetSummary,
+  PanelCut,
+  PlacedPanel,
+} from './types';
 
-export function generateCutList(params: BoxParams, acoustics: AcousticResult): PanelCut[] {
+export function generateCutList(
+  params: BoxParams,
+  acoustics: AcousticResult,
+  lang: AppLanguage = 'pl',
+): PanelCut[] {
+  const isEn = lang === 'en';
   const W = Math.round(acoustics.effectiveExternalWidth);
   const H = Math.round(acoustics.effectiveExternalHeight);
   const D = Math.round(acoustics.effectiveExternalDepth);
@@ -68,13 +80,19 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
 
   const driverText =
     params.driverCount > 1
-      ? `${params.driverCount}× otwór Ø${params.driverCutoutDia} mm (${acoustics.driverLayoutLabel})`
-      : `Otwór Ø${params.driverCutoutDia} mm`;
+      ? isEn
+        ? `${params.driverCount}× cutout Ø${params.driverCutoutDia} mm (${acoustics.driverLayoutLabel})`
+        : `${params.driverCount}× otwór Ø${params.driverCutoutDia} mm (${acoustics.driverLayoutLabel})`
+      : isEn
+        ? `Cutout Ø${params.driverCutoutDia} mm`
+        : `Otwór Ø${params.driverCutoutDia} mm`;
 
   const effPortW = Math.round(acoustics.effectivePortWidth);
   const effRearPortW = Math.round(acoustics.effectiveRearPortWidth);
   const effPortDia = Math.round(acoustics.effectivePortDiameter);
-  const roundPortText = `${params.portCount}× rura Ø${effPortDia} mm`;
+  const roundPortText = isEn
+    ? `${params.portCount}× port Ø${effPortDia} mm`
+    : `${params.portCount}× rura Ø${effPortDia} mm`;
 
   // Top & Bottom (split if top has driver or port cutouts)
   const topHasDriver = effectiveDriverFace === 'top';
@@ -88,7 +106,13 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
 
     pushPanel(
       'top',
-      topHasDriver ? 'Góra (Płyta głośnikowa)' : 'Góra (z otworami portu)',
+      topHasDriver
+        ? isEn
+          ? 'Top (Driver Baffle)'
+          : 'Góra (Płyta głośnikowa)'
+        : isEn
+          ? 'Top (with port cutouts)'
+          : 'Góra (z otworami portu)',
       1,
       topBottomW,
       topBottomD,
@@ -99,7 +123,7 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
     if (doubleOnTop) {
       pushPanel(
         'top-double',
-        'Góra — Druga warstwa wzmacniająca',
+        isEn ? 'Top — Second Reinforcement Layer' : 'Góra — Druga warstwa wzmacniająca',
         1,
         acoustics.internalWidth,
         acoustics.internalDepth,
@@ -108,83 +132,122 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
       );
     }
 
-    pushPanel('bottom', 'Dół (Podstawa)', 1, topBottomW, topBottomD, 'Pełna płyta', 'enclosure');
+    pushPanel(
+      'bottom',
+      isEn ? 'Bottom (Base)' : 'Dół (Podstawa)',
+      1,
+      topBottomW,
+      topBottomD,
+      isEn ? 'Solid panel' : 'Pełna płyta',
+      'enclosure',
+    );
   } else {
     pushPanel(
       'top-bottom',
-      'Góra i Dół (Wieńce)',
+      isEn ? 'Top & Bottom Panels' : 'Góra i Dół (Wieńce)',
       2,
       topBottomW,
       topBottomD,
-      'Bez otworów',
+      isEn ? 'No cutouts' : 'Bez otworów',
       'enclosure',
     );
   }
 
   // Left & Right Sides (split if a side carries round port cutouts)
   if (effectivePortFace === 'side_right' || effectivePortFace === 'side_left') {
+    const optionalTerm = isEn
+      ? 'For speaker terminal cup (optional)'
+      : 'Pod terminal głośnikowy (opcjonalnie)';
     pushPanel(
       'side-left',
-      'Bok lewy',
+      isEn ? 'Left Side' : 'Bok lewy',
       1,
       sideW,
       sideH,
-      effectivePortFace === 'side_left' ? roundPortText : 'Pod terminal głośnikowy (opcjonalnie)',
+      effectivePortFace === 'side_left' ? roundPortText : optionalTerm,
       'enclosure',
     );
     pushPanel(
       'side-right',
-      'Bok prawy',
+      isEn ? 'Right Side' : 'Bok prawy',
       1,
       sideW,
       sideH,
-      effectivePortFace === 'side_right' ? roundPortText : 'Pod terminal głośnikowy (opcjonalnie)',
+      effectivePortFace === 'side_right' ? roundPortText : optionalTerm,
       'enclosure',
     );
   } else {
     pushPanel(
       'sides',
-      'Boki (Lewy + Prawy)',
+      isEn ? 'Sides (Left + Right)' : 'Boki (Lewy + Prawy)',
       2,
       sideW,
       sideH,
-      'Pod terminal głośnikowy (opcjonalnie)',
+      isEn ? 'For speaker terminal cup (optional)' : 'Pod terminal głośnikowy (opcjonalnie)',
       'enclosure',
     );
   }
 
   // Front Panel notes
   const slotSide = params.portSlotSide ?? 'right';
-  const slotSideLabel =
-    slotSide === 'left' ? 'lewy bok' : slotSide === 'bottom' ? 'dół' : 'prawy bok';
+  const slotSideLabel = isEn
+    ? slotSide === 'left'
+      ? 'left side'
+      : slotSide === 'bottom'
+        ? 'bottom'
+        : 'right side'
+    : slotSide === 'left'
+      ? 'lewy bok'
+      : slotSide === 'bottom'
+        ? 'dół'
+        : 'prawy bok';
 
   let frontNotes = '';
   if (params.enclosureType === 'bandpass_4th') {
-    frontNotes = `Szyba inspekcyjna + port ${effPortW} × ${Math.round(acoustics.effectivePortHeight)} mm`;
+    frontNotes = isEn
+      ? `Acrylic window + port ${effPortW} × ${Math.round(acoustics.effectivePortHeight)} mm`
+      : `Szyba inspekcyjna + port ${effPortW} × ${Math.round(acoustics.effectivePortHeight)} mm`;
   } else if (params.enclosureType === 'bandpass_6th') {
-    frontNotes = `Port przód ${effPortW}×${Math.round(acoustics.effectivePortHeight)} + port tył ${effRearPortW}×${Math.round(acoustics.effectiveRearPortHeight)} mm`;
+    frontNotes = isEn
+      ? `Front port ${effPortW}×${Math.round(acoustics.effectivePortHeight)} + rear port ${effRearPortW}×${Math.round(acoustics.effectiveRearPortHeight)} mm`
+      : `Port przód ${effPortW}×${Math.round(acoustics.effectivePortHeight)} + port tył ${effRearPortW}×${Math.round(acoustics.effectiveRearPortHeight)} mm`;
   } else {
     const frontParts: string[] = [];
     if (effectiveDriverFace === 'front') frontParts.push(driverText);
     if (params.enclosureType === 'vented_slot') {
       frontParts.push(
         slotSide === 'bottom'
-          ? `port dolny ${Math.round(acoustics.effectivePortHeight)}×${effPortW} mm`
-          : `port (${slotSideLabel}) ${effPortW}×${Math.round(acoustics.effectivePortHeight)} mm`,
+          ? isEn
+            ? `bottom port ${Math.round(acoustics.effectivePortHeight)}×${effPortW} mm`
+            : `port dolny ${Math.round(acoustics.effectivePortHeight)}×${effPortW} mm`
+          : isEn
+            ? `port (${slotSideLabel}) ${effPortW}×${Math.round(acoustics.effectivePortHeight)} mm`
+            : `port (${slotSideLabel}) ${effPortW}×${Math.round(acoustics.effectivePortHeight)} mm`,
       );
     } else if (effectivePortFace === 'front') {
       frontParts.push(roundPortText);
     }
-    frontNotes = frontParts.length > 0 ? frontParts.join(' + ') : 'Pełna płyta (głośniki na górze)';
+    frontNotes =
+      frontParts.length > 0
+        ? frontParts.join(' + ')
+        : isEn
+          ? 'Solid panel (drivers on top)'
+          : 'Pełna płyta (głośniki na górze)';
   }
 
   pushPanel(
     'front',
     isBandpass
-      ? 'Front (z szybą inspekcyjną)'
+      ? isEn
+        ? 'Front (with inspection window)'
+        : 'Front (z szybą inspekcyjną)'
       : effectiveDriverFace === 'front'
-        ? 'Front (Płyta głośnikowa)'
-        : 'Front (Ściana przednia)',
+        ? isEn
+          ? 'Front (Driver Baffle)'
+          : 'Front (Płyta głośnikowa)'
+        : isEn
+          ? 'Front (Front Wall)'
+          : 'Front (Ściana przednia)',
     1,
     frontBackW,
     frontBackH,
@@ -195,7 +258,7 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
   if (doubleOnFront) {
     pushPanel(
       'front-double',
-      'Front — Druga warstwa wzmacniająca',
+      isEn ? 'Front — Second Reinforcement Layer' : 'Front — Druga warstwa wzmacniająca',
       1,
       frontBackW,
       frontBackH,
@@ -204,7 +267,15 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
     );
   }
 
-  pushPanel('back', 'Tył (Ściana tylna)', 1, frontBackW, frontBackH, 'Pełna płyta', 'enclosure');
+  pushPanel(
+    'back',
+    isEn ? 'Back (Rear Wall)' : 'Tył (Ściana tylna)',
+    1,
+    frontBackW,
+    frontBackH,
+    isEn ? 'Solid panel' : 'Pełna płyta',
+    'enclosure',
+  );
 
   // Primary / Front slot port baffles
   if ((params.enclosureType === 'vented_slot' || isBandpass) && acoustics.slotPort) {
@@ -214,36 +285,66 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
       pushPanel(
         'port-1',
         isBandpass
-          ? 'Przegroda portu przód 1 (Wzdłużna)'
+          ? isEn
+            ? 'Front Port Wall 1 (Longitudinal)'
+            : 'Przegroda portu przód 1 (Wzdłużna)'
           : isBottomSlot
-            ? 'Przegroda portu 1 (Pozioma — dół)'
-            : `Przegroda portu 1 (${slotSide === 'left' ? 'Lewa' : 'Prawa'} wzdłużna)`,
+            ? isEn
+              ? 'Port Wall 1 (Horizontal — bottom)'
+              : 'Przegroda portu 1 (Pozioma — dół)'
+            : isEn
+              ? `Port Wall 1 (${slotSide === 'left' ? 'Left' : 'Right'} longitudinal)`
+              : `Przegroda portu 1 (${slotSide === 'left' ? 'Lewa' : 'Prawa'} wzdłużna)`,
         1,
         acoustics.slotPort.baffle1Length,
         portH,
-        acoustics.slotPort.isBent ? 'Łączy się z przegrodą 2 pod kątem 90°' : 'Prosty kanał portu',
+        acoustics.slotPort.isBent
+          ? isEn
+            ? 'Joins port wall 2 at 90°'
+            : 'Łączy się z przegrodą 2 pod kątem 90°'
+          : isEn
+            ? 'Straight port channel'
+            : 'Prosty kanał portu',
         'port',
       );
     }
     if (acoustics.slotPort.isBent && acoustics.slotPort.baffle2Length > 1) {
       pushPanel(
         'port-2',
-        isBandpass ? 'Przegroda portu przód 2 (Zagięcie L)' : 'Przegroda portu 2 (Tylna — zagięcie L)',
+        isBandpass
+          ? isEn
+            ? 'Front Port Wall 2 (L-bend)'
+            : 'Przegroda portu przód 2 (Zagięcie L)'
+          : isEn
+            ? 'Port Wall 2 (Rear — L-bend)'
+            : 'Przegroda portu 2 (Tylna — zagięcie L)',
         1,
         acoustics.slotPort.baffle2Length,
         portH,
-        'Równoległa do ściany tylnej',
+        isEn ? 'Parallel to rear wall' : 'Równoległa do ściany tylnej',
         'port',
       );
     }
     if (!params.portFullHeight) {
       pushPanel(
         'port-cap',
-        isBottomSlot ? 'Ścianka boczna zamykająca portu' : 'Półka zamykająca portu przód',
+        isBottomSlot
+          ? isEn
+            ? 'Port Side Closure Wall'
+            : 'Ścianka boczna zamykająca portu'
+          : isEn
+            ? 'Front Port Top Closure Shelf'
+            : 'Półka zamykająca portu przód',
         1,
         acoustics.slotPort.baffle1Length,
         effPortW + t,
-        isBottomSlot ? 'Boczna ścianka kanału dolnego' : 'Górna ścianka kanału szczelinowego',
+        isBottomSlot
+          ? isEn
+            ? 'Side wall of bottom slot channel'
+            : 'Boczna ścianka kanału dolnego'
+          : isEn
+            ? 'Top wall of slot channel'
+            : 'Górna ścianka kanału szczelinowego',
         'port',
       );
     }
@@ -255,33 +356,39 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
     if (acoustics.rearSlotPort.baffle1Length > 1) {
       pushPanel(
         'rear-port-1',
-        'Przegroda portu tył 1 (Komora niska)',
+        isEn ? 'Rear Port Wall 1 (Low Chamber)' : 'Przegroda portu tył 1 (Komora niska)',
         1,
         acoustics.rearSlotPort.baffle1Length,
         rearPortH,
-        acoustics.rearSlotPort.isBent ? 'Kanał tylnej komory zagięty 90°' : 'Prosty kanał tylnej komory',
+        acoustics.rearSlotPort.isBent
+          ? isEn
+            ? '90° folded rear chamber channel'
+            : 'Kanał tylnej komory zagięty 90°'
+          : isEn
+            ? 'Straight rear chamber channel'
+            : 'Prosty kanał tylnej komory',
         'port',
       );
     }
     if (acoustics.rearSlotPort.isBent && acoustics.rearSlotPort.baffle2Length > 1) {
       pushPanel(
         'rear-port-2',
-        'Przegroda portu tył 2 (Zagięcie L)',
+        isEn ? 'Rear Port Wall 2 (L-bend)' : 'Przegroda portu tył 2 (Zagięcie L)',
         1,
         acoustics.rearSlotPort.baffle2Length,
         rearPortH,
-        'Równoległa do ściany tylnej',
+        isEn ? 'Parallel to rear wall' : 'Równoległa do ściany tylnej',
         'port',
       );
     }
     if (!params.portRearFullHeight) {
       pushPanel(
         'rear-port-cap',
-        'Półka zamykająca portu tył',
+        isEn ? 'Rear Port Closure Shelf' : 'Półka zamykająca portu tył',
         1,
         acoustics.rearSlotPort.baffle1Length,
         effRearPortW + t,
-        'Górna ścianka tylnego portu',
+        isEn ? 'Top wall of rear port' : 'Górna ścianka tylnego portu',
         'port',
       );
     }
@@ -292,11 +399,11 @@ export function generateCutList(params: BoxParams, acoustics: AcousticResult): P
     const divH = Math.round(acoustics.internalHeight);
     pushPanel(
       'bandpass-divider',
-      'Przegroda wewnętrzna Bandpass',
+      isEn ? 'Bandpass Internal Divider' : 'Przegroda wewnętrzna Bandpass',
       1,
       divW,
       divH,
-      `${driverText} (dzieli komory)`,
+      isEn ? `${driverText} (divides chambers)` : `${driverText} (dzieli komory)`,
       'baffle',
     );
   }
@@ -310,7 +417,12 @@ interface Shelf {
   cursorX: number;
 }
 
-export function optimizeCutSheet(params: BoxParams, panels: PanelCut[]): CutSheetSummary {
+export function optimizeCutSheet(
+  params: BoxParams,
+  panels: PanelCut[],
+  lang: AppLanguage = 'pl',
+): CutSheetSummary {
+  const isEn = lang === 'en';
   const sheetW = Math.max(500, params.sheetWidth);
   const sheetH = Math.max(500, params.sheetHeight);
   const kerf = Math.max(0, params.sawKerf);
@@ -359,7 +471,7 @@ export function optimizeCutSheet(params: BoxParams, panels: PanelCut[]): CutShee
         height: piece.h,
         thickness: params.thickness,
         areaM2: (piece.w * piece.h) / 1_000_000,
-        notes: 'Przekracza format arkusza',
+        notes: isEn ? 'Exceeds sheet dimensions' : 'Przekracza format arkusza',
         category: piece.category,
       });
       continue;

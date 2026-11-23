@@ -7,7 +7,7 @@ import {
   type SdInputMode,
   type TsSolverInput,
 } from './tsSolver';
-import type { CoilWiringMode, DriverPreset, VoiceCoilCount } from './types';
+import type { AppLanguage, CoilWiringMode, DriverPreset, VoiceCoilCount } from './types';
 
 export type WdrUnitSystem = 'si' | 'practical';
 export type WdrUnitPreference = 'auto' | WdrUnitSystem;
@@ -177,7 +177,9 @@ export function parseWinIsdWdr(
   content: string,
   fileName = 'WinISD-Driver.wdr',
   unitPreference: WdrUnitPreference = 'auto',
+  lang: AppLanguage = 'pl',
 ): ParseWdrOutcome {
+  const isEn = lang === 'en';
   const normalized = content.replace(/^\uFEFF/, '');
   const lines = normalized.split(/\r?\n/);
 
@@ -230,8 +232,9 @@ export function parseWinIsdWdr(
   if (rawFieldCount === 0 || (!hasDriverSection && presentTsCount < 2)) {
     return {
       ok: false,
-      error:
-        'Nie rozpoznano poprawnego pliku WinISD .wdr (brak sekcji [Driver] lub parametrów Thiele-Small).',
+      error: isEn
+        ? 'Could not recognize a valid WinISD .wdr file (missing [Driver] section or Thiele-Small parameters).'
+        : 'Nie rozpoznano poprawnego pliku WinISD .wdr (brak sekcji [Driver] lub parametrów Thiele-Small).',
     };
   }
 
@@ -326,7 +329,11 @@ export function parseWinIsdWdr(
   }
   if (xmaxMm === undefined) {
     xmaxMm = 12;
-    warnings.push('Brak Xmax w pliku .wdr — przyjęto domyślnie 12.0 mm.');
+    warnings.push(
+      isEn
+        ? 'Missing Xmax in .wdr file — defaulted to 12.0 mm.'
+        : 'Brak Xmax w pliku .wdr — przyjęto domyślnie 12.0 mm.',
+    );
   }
 
   const diaRaw = firstNumber(fields, ['dia', 'dd', 'pistondia']);
@@ -385,7 +392,11 @@ export function parseWinIsdWdr(
 
   const powerW = peRaw !== undefined && peRaw >= 10 ? peRaw : 500;
   if (peRaw === undefined) {
-    warnings.push('Brak mocy Pe w pliku .wdr — przyjęto domyślnie 500 W RMS.');
+    warnings.push(
+      isEn
+        ? 'Missing Pe power rating in .wdr file — defaulted to 500 W RMS.'
+        : 'Brak mocy Pe w pliku .wdr — przyjęto domyślnie 500 W RMS.',
+    );
   }
 
   // Determine solving modes for TsSolverInput
@@ -397,7 +408,11 @@ export function parseWinIsdWdr(
   } else if (mmsG !== undefined && cmsMmPerN !== undefined) {
     mechSolveMode = 'from_mms_cms';
   } else {
-    warnings.push('Niepełna para mechaniczna (Fs/Vas lub Mms/Cms) — uzupełniono wartościami bazowymi.');
+    warnings.push(
+      isEn
+        ? 'Incomplete mechanical pair (Fs/Vas or Mms/Cms) — filled with baseline defaults.'
+        : 'Niepełna para mechaniczna (Fs/Vas lub Mms/Cms) — uzupełniono wartościami bazowymi.',
+    );
   }
 
   let qSolveMode: QSolveMode = 'solve_qts';
@@ -409,7 +424,11 @@ export function parseWinIsdWdr(
     qSolveMode = 'solve_qms';
   } else if (qtsRaw !== undefined) {
     qSolveMode = 'solve_qes';
-    warnings.push('Brak Qes i Qms w pliku .wdr — wyliczono Qes z Qts przy Qms = 4.8.');
+    warnings.push(
+      isEn
+        ? 'Missing Qes and Qms in .wdr file — computed Qes from Qts assuming Qms = 4.8.'
+        : 'Brak Qes i Qms w pliku .wdr — wyliczono Qes z Qts przy Qms = 4.8.',
+    );
   }
 
   let motorSolveMode: MotorSolveMode = 'solve_bl';
@@ -429,9 +448,17 @@ export function parseWinIsdWdr(
     sdInputMode = 'from_dd';
     resolvedDdMm = Math.round(cutoutExplicitMm * 0.88);
     resolvedSdCm2 = Math.PI * Math.pow(resolvedDdMm / 20, 2);
-    warnings.push('Brak Sd w pliku .wdr — oszacowano powierzchnię membrany z otworu montażowego.');
+    warnings.push(
+      isEn
+        ? 'Missing Sd in .wdr file — estimated cone area from mounting cutout diameter.'
+        : 'Brak Sd w pliku .wdr — oszacowano powierzchnię membrany z otworu montażowego.',
+    );
   } else if (sdCm2 === undefined) {
-    warnings.push('Brak Sd i średnicy membrany w pliku .wdr — przyjęto 480 cm² (12").');
+    warnings.push(
+      isEn
+        ? 'Missing Sd and cone diameter in .wdr file — defaulted to 480 cm² (12").'
+        : 'Brak Sd i średnicy membrany w pliku .wdr — przyjęto 480 cm² (12").',
+    );
   }
 
   const sizeLabel = inferSizeLabelFromDiameterMm(
@@ -475,7 +502,7 @@ export function parseWinIsdWdr(
     speedOfSoundMs: speedOfSound && speedOfSound > 300 && speedOfSound < 380 ? speedOfSound : undefined,
   };
 
-  const solved = solveThieleSmall(solverInput);
+  const solved = solveThieleSmall(solverInput, lang);
   for (const w of solved.warnings) {
     warnings.push(w.message);
   }
@@ -489,6 +516,7 @@ export function parseWinIsdWdr(
     solved,
     mounting,
     leMh,
+    lang,
   );
   preset.source = `WinISD (${fileName})`;
 

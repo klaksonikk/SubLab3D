@@ -1,4 +1,5 @@
 import type {
+  AppLanguage,
   CoilWiringMode,
   DriverPreset,
   DriverWiringType,
@@ -50,7 +51,11 @@ export function dbfsToLinearGain(dbfs: number): number {
  * Computes resultant electrical impedance (Z_nom, DC Re, inductance Le) from
  * voice coil count (1x SVC / 2x DVC), per-coil resistance, coil wiring, and multi-driver array wiring.
  */
-export function computeElectricalLoad(cfg: ElectricalWiringConfig): ElectricalLoadResult {
+export function computeElectricalLoad(
+  cfg: ElectricalWiringConfig,
+  lang: AppLanguage = 'pl',
+): ElectricalLoadResult {
+  const isEn = lang === 'en';
   const voiceCoilCount: VoiceCoilCount = cfg.voiceCoilCount === 2 ? 2 : 1;
   const safeCoilNom = Math.max(0.5, cfg.coilNominalOhms || 4);
   const safeCoilRe = Math.max(0.2, cfg.coilReOhms || safeCoilNom * 0.8);
@@ -80,7 +85,7 @@ export function computeElectricalLoad(cfg: ElectricalWiringConfig): ElectricalLo
   if (count > 1) {
     if (cfg.arrayWiring === 'series') {
       arrayMultiplier = count;
-      arrayTag = `szeregowo (${count}S)`;
+      arrayTag = isEn ? `series (${count}S)` : `szeregowo (${count}S)`;
     } else if (cfg.arrayWiring === 'series_parallel') {
       if (count === 4) {
         arrayMultiplier = 1; // 2S2P
@@ -90,11 +95,11 @@ export function computeElectricalLoad(cfg: ElectricalWiringConfig): ElectricalLo
         arrayTag = '2S3P';
       } else {
         arrayMultiplier = 1 / count;
-        arrayTag = `równolegle (${count}P)`;
+        arrayTag = isEn ? `parallel (${count}P)` : `równolegle (${count}P)`;
       }
     } else {
       arrayMultiplier = 1 / count;
-      arrayTag = `równolegle (${count}P)`;
+      arrayTag = isEn ? `parallel (${count}P)` : `równolegle (${count}P)`;
     }
   }
 
@@ -104,10 +109,16 @@ export function computeElectricalLoad(cfg: ElectricalWiringConfig): ElectricalLo
 
   const coilTag =
     voiceCoilCount === 2
-      ? `2×${safeCoilNom}Ω ${effectiveCoilWiring === 'parallel' ? 'równol.' : 'szereg.'}`
+      ? isEn
+        ? `2×${safeCoilNom}Ω ${effectiveCoilWiring === 'parallel' ? 'parallel' : 'series'}`
+        : `2×${safeCoilNom}Ω ${effectiveCoilWiring === 'parallel' ? 'równol.' : 'szereg.'}`
       : `1×${safeCoilNom}Ω`;
   const wiringSummaryLabel =
-    count > 1 ? `${count} szt. (${coilTag}) + ${arrayTag}` : `${coilTag}`;
+    count > 1
+      ? isEn
+        ? `${count} pcs (${coilTag}) + ${arrayTag}`
+        : `${count} szt. (${coilTag}) + ${arrayTag}`
+      : `${coilTag}`;
 
   return {
     voiceCoilCount,
@@ -189,7 +200,11 @@ export interface TsSolverOutput {
   isValid: boolean;
 }
 
-export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
+export function solveThieleSmall(
+  input: TsSolverInput,
+  lang: AppLanguage = 'pl',
+): TsSolverOutput {
+  const isEn = lang === 'en';
   const warnings: TsValidationWarning[] = [];
 
   const rho = Math.max(0.8, input.airDensityKgM3 ?? AIR_DENSITY_DEFAULT);
@@ -266,8 +281,9 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
       if (qts >= qes) {
         warnings.push({
           field: 'qts',
-          message:
-            'Qts musi być mniejsze niż wyliczone Qes (z Bl), aby istniało dodatnie Qms.',
+          message: isEn
+            ? 'Qts must be lower than computed Qes (from Bl) for a positive Qms.'
+            : 'Qts musi być mniejsze niż wyliczone Qes (z Bl), aby istniało dodatnie Qms.',
         });
         qms = Math.max(1.5, qes * 8);
         qts = (qes * qms) / (qes + qms);
@@ -282,8 +298,9 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
       if (qts >= qms) {
         warnings.push({
           field: 'qts',
-          message:
-            'Nieprawidłowa zależność: Qts musi być mniejsze niż Qms (1/Qts = 1/Qes + 1/Qms).',
+          message: isEn
+            ? 'Invalid relation: Qts must be lower than Qms (1/Qts = 1/Qes + 1/Qms).'
+            : 'Nieprawidłowa zależność: Qts musi być mniejsze niż Qms (1/Qts = 1/Qes + 1/Qms).',
         });
         qes = Math.max(0.15, qts * 1.1);
       } else {
@@ -293,8 +310,9 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
       if (qts >= qes) {
         warnings.push({
           field: 'qts',
-          message:
-            'Nieprawidłowa zależność: Qts musi być mniejsze niż Qes (1/Qts = 1/Qes + 1/Qms).',
+          message: isEn
+            ? 'Invalid relation: Qts must be lower than Qes (1/Qts = 1/Qes + 1/Qms).'
+            : 'Nieprawidłowa zależność: Qts musi być mniejsze niż Qes (1/Qts = 1/Qes + 1/Qms).',
         });
         qms = Math.max(1.5, qes * 8);
       } else {
@@ -309,19 +327,25 @@ export function solveThieleSmall(input: TsSolverInput): TsSolverOutput {
   if (fs < 14 || fs > 180) {
     warnings.push({
       field: 'fs',
-      message: 'Rezonans Fs poza typowym zakresem subwoofera (14–180 Hz).',
+      message: isEn
+        ? 'Resonance Fs is outside the typical subwoofer range (14–180 Hz).'
+        : 'Rezonans Fs poza typowym zakresem subwoofera (14–180 Hz).',
     });
   }
   if (qts < 0.15 || qts > 1.4) {
     warnings.push({
       field: 'qts',
-      message: 'Dobroć Qts poza typowym zakresem (0.15–1.40).',
+      message: isEn
+        ? 'Total Qts is outside the typical range (0.15–1.40).'
+        : 'Dobroć Qts poza typowym zakresem (0.15–1.40).',
     });
   }
   if (mmsKg * 1000 < 8 || mmsKg * 1000 > 1500) {
     warnings.push({
       field: 'mms',
-      message: 'Wyliczona masa drgająca Mms jest nietypowa — sprawdź Sd i Vas.',
+      message: isEn
+        ? 'Computed moving mass Mms is unusual — check Sd and Vas.'
+        : 'Wyliczona masa drgająca Mms jest nietypowa — sprawdź Sd i Vas.',
     });
   }
 
@@ -470,6 +494,7 @@ export function buildCustomDriverPreset(
     displacement: number;
   },
   referenceSeriesLeMh?: number,
+  lang: AppLanguage = 'pl',
 ): DriverPreset {
   const cleanBrand = brand.trim();
   const cleanModel = model.trim();
@@ -488,7 +513,7 @@ export function buildCustomDriverPreset(
     id,
     name: fullName,
     sizeLabel: sizeLabel.trim() || '12"',
-    source: 'Własny T-S',
+    source: lang === 'en' ? 'Custom T-S' : 'Własny T-S',
     isCustom: true,
     cutoutDia: mounting.cutoutDia,
     outerDia: mounting.outerDia,

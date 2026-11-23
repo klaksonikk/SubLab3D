@@ -1,5 +1,6 @@
 import type {
   AcousticResult,
+  AppLanguage,
   BoxParams,
   DriverFace,
   DriverPattern,
@@ -195,13 +196,15 @@ export function computeDriverGridLayout(
   usableH: number,
   outerDia: number,
   pattern: DriverPattern = 'auto',
+  lang: AppLanguage = 'pl',
 ): DriverLayoutResult {
   const safeCount = Math.min(6, Math.max(1, Math.round(count)));
+  const isEn = lang === 'en';
 
   if (safeCount === 1) {
     const positions = [{ x: 0, y: 0 }];
     const ev = evaluateLayout(positions, usableW, usableH, outerDia);
-    return { positions, ...ev, patternLabel: 'Centralny (1×)' };
+    return { positions, ...ev, patternLabel: isEn ? 'Centered (1×)' : 'Centralny (1×)' };
   }
 
   const candidates: LayoutCandidate[] = [];
@@ -209,13 +212,13 @@ export function computeDriverGridLayout(
   if (safeCount === 2) {
     candidates.push(
       {
-        label: 'Para pozioma (1×2)',
+        label: isEn ? 'Horizontal pair (1×2)' : 'Para pozioma (1×2)',
         kind: 'inline',
         positions: buildGridCandidate(2, [2], usableW, usableH, outerDia),
         preferenceBonus: 2,
       },
       {
-        label: 'Para pionowa (2×1)',
+        label: isEn ? 'Vertical pair (2×1)' : 'Para pionowa (2×1)',
         kind: 'grid',
         positions: buildGridCandidate(1, [1, 1], usableW, usableH, outerDia),
         preferenceBonus: 0,
@@ -224,31 +227,31 @@ export function computeDriverGridLayout(
   } else if (safeCount === 3) {
     candidates.push(
       {
-        label: 'Trójkąt naprzemienny (2+1)',
+        label: isEn ? 'Alternating triangle (2+1)' : 'Trójkąt naprzemienny (2+1)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([2, 1], usableW, usableH, outerDia, false),
         preferenceBonus: 4,
       },
       {
-        label: 'Odwrócony trójkąt (1+2)',
+        label: isEn ? 'Inverted triangle (1+2)' : 'Odwrócony trójkąt (1+2)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([1, 2], usableW, usableH, outerDia, false),
         preferenceBonus: 1,
       },
       {
-        label: 'Szereg poziomy (1×3)',
+        label: isEn ? 'Horizontal row (1×3)' : 'Szereg poziomy (1×3)',
         kind: 'inline',
         positions: buildGridCandidate(3, [3], usableW, usableH, outerDia),
         preferenceBonus: 2,
       },
       {
-        label: 'Siatka (2+1)',
+        label: isEn ? 'Grid (2+1)' : 'Siatka (2+1)',
         kind: 'grid',
         positions: buildGridCandidate(2, [2, 1], usableW, usableH, outerDia),
         preferenceBonus: 0,
       },
       {
-        label: 'Kolumna pionowa (3×1)',
+        label: isEn ? 'Vertical column (3×1)' : 'Kolumna pionowa (3×1)',
         kind: 'grid',
         positions: buildGridCandidate(1, [1, 1, 1], usableW, usableH, outerDia),
         preferenceBonus: -2,
@@ -257,25 +260,25 @@ export function computeDriverGridLayout(
   } else if (safeCount === 4) {
     candidates.push(
       {
-        label: 'Siatka symetryczna (2×2)',
+        label: isEn ? 'Symmetric grid (2×2)' : 'Siatka symetryczna (2×2)',
         kind: 'grid',
         positions: buildGridCandidate(2, [2, 2], usableW, usableH, outerDia),
         preferenceBonus: 3,
       },
       {
-        label: 'Plaster naprzemienny (2+2)',
+        label: isEn ? 'Staggered honeycomb (2+2)' : 'Plaster naprzemienny (2+2)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([2, 2], usableW, usableH, outerDia, true),
         preferenceBonus: 4,
       },
       {
-        label: 'Romb akustyczny (1-2-1)',
+        label: isEn ? 'Acoustic diamond (1-2-1)' : 'Romb akustyczny (1-2-1)',
         kind: 'staggered',
         positions: buildDiamond4Candidate(usableW, usableH, outerDia),
         preferenceBonus: 2,
       },
       {
-        label: 'Szereg poziomy (1×4)',
+        label: isEn ? 'Horizontal row (1×4)' : 'Szereg poziomy (1×4)',
         kind: 'inline',
         positions: buildGridCandidate(4, [4], usableW, usableH, outerDia),
         preferenceBonus: 1,
@@ -290,25 +293,25 @@ export function computeDriverGridLayout(
         preferenceBonus: 5,
       },
       {
-        label: 'Plaster miodu (3+2)',
+        label: isEn ? 'Honeycomb (3+2)' : 'Plaster miodu (3+2)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([3, 2], usableW, usableH, outerDia, false),
         preferenceBonus: 4,
       },
       {
-        label: 'Siatka dwurzędowa (3+2)',
+        label: isEn ? 'Two-row grid (3+2)' : 'Siatka dwurzędowa (3+2)',
         kind: 'grid',
         positions: buildGridCandidate(3, [3, 2], usableW, usableH, outerDia),
         preferenceBonus: 1,
       },
       {
-        label: 'Siatka pionowa (2+2+1)',
+        label: isEn ? 'Vertical grid (2+2+1)' : 'Siatka pionowa (2+2+1)',
         kind: 'grid',
         positions: buildGridCandidate(2, [2, 2, 1], usableW, usableH, outerDia),
         preferenceBonus: 0,
       },
       {
-        label: 'Szereg poziomy (1×5)',
+        label: isEn ? 'Horizontal row (1×5)' : 'Szereg poziomy (1×5)',
         kind: 'inline',
         positions: buildGridCandidate(5, [5], usableW, usableH, outerDia),
         preferenceBonus: -2,
@@ -318,37 +321,37 @@ export function computeDriverGridLayout(
     // 6 drivers
     candidates.push(
       {
-        label: 'Plaster miodu (3+3)',
+        label: isEn ? 'Honeycomb (3+3)' : 'Plaster miodu (3+3)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([3, 3], usableW, usableH, outerDia, true),
         preferenceBonus: 4,
       },
       {
-        label: 'Piramida akustyczna (3+2+1)',
+        label: isEn ? 'Acoustic pyramid (3+2+1)' : 'Piramida akustyczna (3+2+1)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([3, 2, 1], usableW, usableH, outerDia, false),
         preferenceBonus: 2,
       },
       {
-        label: 'Plaster pionowy (2+2+2)',
+        label: isEn ? 'Vertical honeycomb (2+2+2)' : 'Plaster pionowy (2+2+2)',
         kind: 'staggered',
         positions: buildHoneycombRowsCandidate([2, 2, 2], usableW, usableH, outerDia, true),
         preferenceBonus: 3,
       },
       {
-        label: 'Siatka (3×2)',
+        label: isEn ? 'Grid (3×2)' : 'Siatka (3×2)',
         kind: 'grid',
         positions: buildGridCandidate(3, [3, 3], usableW, usableH, outerDia),
         preferenceBonus: 3,
       },
       {
-        label: 'Siatka głęboka (2×3)',
+        label: isEn ? 'Deep grid (2×3)' : 'Siatka głęboka (2×3)',
         kind: 'grid',
         positions: buildGridCandidate(2, [2, 2, 2], usableW, usableH, outerDia),
         preferenceBonus: 2,
       },
       {
-        label: 'Szereg poziomy (1×6)',
+        label: isEn ? 'Horizontal row (1×6)' : 'Szereg poziomy (1×6)',
         kind: 'inline',
         positions: buildGridCandidate(6, [6], usableW, usableH, outerDia),
         preferenceBonus: -2,
@@ -886,7 +889,9 @@ function evaluateEnclosureCore(
   extW: number,
   extH: number,
   extD: number,
+  lang: AppLanguage = 'pl',
 ): AcousticResult {
+  const isEn = lang === 'en';
   const t = Math.max(6, params.thickness);
   const { isBandpass, effectiveDriverFace, effectivePortFace } = resolveEffectiveFaces(params);
   const slotSide = params.portSlotSide ?? 'right';
@@ -911,7 +916,9 @@ function evaluateEnclosureCore(
     issues.push({
       id: 'too-small',
       severity: 'error',
-      message: 'Wymiary zewnętrzne są zbyt małe względem grubości płyty.',
+      message: isEn
+        ? 'External dimensions are too small relative to board thickness.'
+        : 'Wymiary zewnętrzne są zbyt małe względem grubości płyty.',
     });
   }
 
@@ -1053,7 +1060,9 @@ function evaluateEnclosureCore(
       issues.push({
         id: 'port-overflow',
         severity: 'error',
-        message: 'Tunel bass-reflex jest zbyt długi lub zbyt szeroki dla wybranych wymiarów obudowy.',
+        message: isEn
+          ? 'The slot port is too long or too wide for the current enclosure dimensions.'
+          : 'Tunel bass-reflex jest zbyt długi lub zbyt szeroki dla wybranych wymiarów obudowy.',
       });
     }
   } else if (params.enclosureType === 'vented_round') {
@@ -1136,7 +1145,9 @@ function evaluateEnclosureCore(
       issues.push({
         id: 'round-port-fit',
         severity: 'error',
-        message: `Długość rury (${Math.round(effectivePortLength)} mm) przekracza wymiar roboczy osi montażu (${Math.max(0, Math.round(maxPortRunMm))} mm).`,
+        message: isEn
+          ? `Port tube length (${Math.round(effectivePortLength)} mm) exceeds mounting axis clearance (${Math.max(0, Math.round(maxPortRunMm))} mm).`
+          : `Długość rury (${Math.round(effectivePortLength)} mm) przekracza wymiar roboczy osi montażu (${Math.max(0, Math.round(maxPortRunMm))} mm).`,
       });
     }
 
@@ -1212,7 +1223,9 @@ function evaluateEnclosureCore(
       issues.push({
         id: 'round-port-wall-fit',
         severity: 'error',
-        message: `Rura Ø${Math.round(effectivePortDiameter)} mm (${params.portCount}×) wykracza poza krawędź ściany — skoryguj pozycję lub średnicę.`,
+        message: isEn
+          ? `Round port Ø${Math.round(effectivePortDiameter)} mm (${params.portCount}×) extends beyond panel edge — adjust position or diameter.`
+          : `Rura Ø${Math.round(effectivePortDiameter)} mm (${params.portCount}×) wykracza poza krawędź ściany — skoryguj pozycję lub średnicę.`,
       });
     }
   } else if (params.enclosureType === 'bandpass_4th') {
@@ -1438,7 +1451,9 @@ function evaluateEnclosureCore(
       issues.push({
         id: 'bp6-port-overflow',
         severity: 'error',
-        message: 'Jeden z tuneli Bandpass 6-go rzędu jest zbyt długi lub za szeroki względem komory.',
+        message: isEn
+          ? 'One of the 6th-order Bandpass ports is too long or wide for its chamber.'
+          : 'Jeden z tuneli Bandpass 6-go rzędu jest zbyt długi lub za szeroki względem komory.',
       });
     }
   }
@@ -1447,7 +1462,9 @@ function evaluateEnclosureCore(
     issues.push({
       id: 'target-fb-unreachable',
       severity: 'warning',
-      message: `Docelowe strojenie Fb (${params.targetTuningHz} Hz) jest poza zakresem fizycznym przy obecnej objętości i polu portu.`,
+      message: isEn
+        ? `Target tuning Fb (${params.targetTuningHz} Hz) is outside physical bounds for the current volume and port area.`
+        : `Docelowe strojenie Fb (${params.targetTuningHz} Hz) jest poza zakresem fizycznym przy obecnej objętości i polu portu.`,
     });
   }
 
@@ -1490,6 +1507,7 @@ function evaluateEnclosureCore(
     usableH,
     params.driverOuterDia,
     params.driverPattern ?? 'auto',
+    lang,
   );
 
   // Compute allowed X/Y translation bounds for the active driver cluster inside panelW x panelH
@@ -1584,13 +1602,28 @@ function evaluateEnclosureCore(
     issues.push({
       id: 'driver-port-collision',
       severity: 'error',
-      message: 'Głośnik koliduje z portem — przesuń głośnik lub zmień położenie portu/rury.',
+      message: isEn
+        ? 'Driver collides with the port — move the driver or reposition the port.'
+        : 'Głośnik koliduje z portem — przesuń głośnik lub zmień położenie portu/rury.',
     });
   } else if (!fitsPanelWall) {
+    const faceLabel = isEn
+      ? effectiveDriverFace === 'top'
+        ? 'top panel'
+        : effectiveDriverFace === 'divider'
+          ? 'internal divider'
+          : 'front baffle'
+      : effectiveDriverFace === 'top'
+        ? 'górnej'
+        : effectiveDriverFace === 'divider'
+          ? 'wewnętrznej'
+          : 'przedniej';
     issues.push({
       id: 'driver-front-fit',
       severity: 'error',
-      message: `${params.driverCount}× głośnik nie mieści się na płycie ${effectiveDriverFace === 'top' ? 'górnej' : effectiveDriverFace === 'divider' ? 'wewnętrznej' : 'przedniej'} (zwiększ wymiary, przesuń lub zmień układ).`,
+      message: isEn
+        ? `${params.driverCount}× driver does not fit on the ${faceLabel} (increase dimensions, adjust offset, or change layout).`
+        : `${params.driverCount}× głośnik nie mieści się na płycie ${faceLabel} (zwiększ wymiary, przesuń lub zmień układ).`,
     });
   }
 
@@ -1598,7 +1631,9 @@ function evaluateEnclosureCore(
     issues.push({
       id: 'driver-depth-fit',
       severity: 'error',
-      message: `Magnes głośnika koliduje ze ścianą (luz: ${driverClearanceMm} mm, zalecane min. 20 mm).`,
+      message: isEn
+        ? `Driver magnet collides with rear wall (clearance: ${driverClearanceMm} mm, recommended min. 20 mm).`
+        : `Magnes głośnika koliduje ze ścianą (luz: ${driverClearanceMm} mm, zalecane min. 20 mm).`,
     });
   }
 
@@ -1606,7 +1641,9 @@ function evaluateEnclosureCore(
     issues.push({
       id: 'net-vol-zero',
       severity: 'error',
-      message: 'Objętość netto jest ujemna lub bliska zeru. Zwiększ wymiary obudowy lub skróć port.',
+      message: isEn
+        ? 'Net volume is negative or near zero. Increase enclosure dimensions or shorten the port.'
+        : 'Objętość netto jest ujemna lub bliska zeru. Zwiększ wymiary obudowy lub skróć port.',
     });
   }
 
@@ -1635,7 +1672,9 @@ function evaluateEnclosureCore(
       issues.push({
         id: 'port-chuffing',
         severity: 'warning',
-        message: `Wysoka prędkość powietrza w porcie (${portVelocityMs.toFixed(1)} m/s) — możliwe słyszalne świsty (port noise). Powiększ przekrój portu.`,
+        message: isEn
+          ? `High port air velocity (${portVelocityMs.toFixed(1)} m/s) — audible port chuffing likely. Increase port cross-sectional area.`
+          : `Wysoka prędkość powietrza w porcie (${portVelocityMs.toFixed(1)} m/s) — możliwe słyszalne świsty (port noise). Powiększ przekrój portu.`,
       });
     }
   }
@@ -1713,7 +1752,8 @@ function evaluateEnclosureCore(
   };
 }
 
-export function calculateAcoustics(params: BoxParams): AcousticResult {
+export function calculateAcoustics(params: BoxParams, lang: AppLanguage = 'pl'): AcousticResult {
+  const isEn = lang === 'en';
   const autoField = params.boxAutoCalcField ?? 'none';
   if (autoField === 'none') {
     return evaluateEnclosureCore(
@@ -1721,6 +1761,7 @@ export function calculateAcoustics(params: BoxParams): AcousticResult {
       params.externalWidth,
       params.externalHeight,
       params.externalDepth,
+      lang,
     );
   }
 
@@ -1746,6 +1787,7 @@ export function calculateAcoustics(params: BoxParams): AcousticResult {
       autoField === 'width' ? val : params.externalWidth,
       autoField === 'height' ? val : params.externalHeight,
       autoField === 'depth' ? val : params.externalDepth,
+      lang,
     );
 
   const atMin = evalWithDim(minDim);
@@ -1754,7 +1796,9 @@ export function calculateAcoustics(params: BoxParams): AcousticResult {
       atMin.issues.push({
         id: 'target-netvol-unreachable',
         severity: 'warning',
-        message: `Docelowa objętość netto (${targetNetL.toFixed(1)} L) jest mniejsza niż minimalny gabaryt płyty.`,
+        message: isEn
+          ? `Target net volume (${targetNetL.toFixed(1)} L) is smaller than minimum enclosure size.`
+          : `Docelowa objętość netto (${targetNetL.toFixed(1)} L) jest mniejsza niż minimalny gabaryt płyty.`,
       });
     }
     return atMin;
@@ -1765,7 +1809,9 @@ export function calculateAcoustics(params: BoxParams): AcousticResult {
     atMax.issues.push({
       id: 'target-netvol-unreachable',
       severity: 'error',
-      message: `Docelowa objętość netto (${targetNetL.toFixed(1)} L) wymaga wymiaru powyżej ${maxDim} mm.`,
+      message: isEn
+        ? `Target net volume (${targetNetL.toFixed(1)} L) requires a dimension exceeding ${maxDim} mm.`
+        : `Docelowa objętość netto (${targetNetL.toFixed(1)} L) wymaga wymiaru powyżej ${maxDim} mm.`,
     });
     return atMax;
   }

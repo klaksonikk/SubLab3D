@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Eye, Grid3x3, Layers, RotateCcw } from 'lucide-
 import type { AcousticResult, BoxParams } from '../engine/types';
 import { createContactShadowTexture, createMaterialBank, type MaterialBank } from '../engine/materials3d';
 import { buildEnclosureScene, type BuiltEnclosure } from '../engine/sceneBuilder';
+import { useI18n } from '../i18n';
 
 interface Viewport3DProps {
   params: BoxParams;
@@ -14,12 +15,12 @@ interface Viewport3DProps {
 
 type CameraPresetKey = 'iso' | 'front' | 'side' | 'top' | 'interior';
 
-const CAMERA_PRESETS: Record<CameraPresetKey, { label: string; dir: [number, number, number]; distMult: number }> = {
-  iso: { label: 'Izometryczny', dir: [0.9, 0.62, 1.18], distMult: 1.78 },
-  front: { label: 'Przód', dir: [0, 0.12, 1.35], distMult: 1.62 },
-  side: { label: 'Bok', dir: [1.35, 0.25, 0.05], distMult: 1.62 },
-  top: { label: 'Góra', dir: [0.01, 1.55, 0.2], distMult: 1.68 },
-  interior: { label: 'Wnętrze', dir: [-0.85, 0.45, 0.85], distMult: 1.2 },
+const CAMERA_PRESETS: Record<CameraPresetKey, { labelPl: string; labelEn: string; dir: [number, number, number]; distMult: number }> = {
+  iso: { labelPl: 'Izometryczny', labelEn: 'Isometric', dir: [0.9, 0.62, 1.18], distMult: 1.78 },
+  front: { labelPl: 'Przód', labelEn: 'Front', dir: [0, 0.12, 1.35], distMult: 1.62 },
+  side: { labelPl: 'Bok', labelEn: 'Side', dir: [1.35, 0.25, 0.05], distMult: 1.62 },
+  top: { labelPl: 'Góra', labelEn: 'Top', dir: [0.01, 1.55, 0.2], distMult: 1.68 },
+  interior: { labelPl: 'Wnętrze', labelEn: 'Interior', dir: [-0.85, 0.45, 0.85], distMult: 1.2 },
 };
 
 // Reusable scratch objects to prevent GC allocations during damping transitions
@@ -27,6 +28,8 @@ const _targetCamPos = new THREE.Vector3();
 const _targetLookAt = new THREE.Vector3();
 
 export function Viewport3D({ params, acoustics }: Viewport3DProps) {
+  const { lang } = useI18n();
+  const isEn = lang === 'en';
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [opacityMode, setOpacityMode] = useState<'xray' | 'solid' | 'ghost'>('xray');
   const [explodeFactor, setExplodeFactor] = useState<number>(0);
@@ -452,16 +455,20 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
       <div
         ref={mountRef}
         data-testid="viewport-3d-canvas"
-        aria-label="Interaktywny podgląd 3D obudowy basowej"
+        aria-label={isEn ? 'Interactive 3D subwoofer enclosure viewport' : 'Interaktywny podgląd 3D obudowy basowej'}
         className="w-full h-full cursor-grab active:cursor-grabbing"
       />
 
       {contextLost && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#0A0B0E]/95 z-20 p-6 text-center">
           <div className="max-w-sm border border-white/10 bg-[#14161D] rounded-lg p-6">
-            <h3 className="text-base font-semibold text-white mb-2">Kontekst WebGL przerwany</h3>
+            <h3 className="text-base font-semibold text-white mb-2">
+              {isEn ? 'WebGL context interrupted' : 'Kontekst WebGL przerwany'}
+            </h3>
             <p className="text-sm text-zinc-400">
-              Przeglądarka wstrzymała renderowanie 3D. Odśwież widok lub zmień zakładkę, aby wznowić.
+              {isEn
+                ? 'The browser paused 3D rendering. Refresh the view or switch tabs to resume.'
+                : 'Przeglądarka wstrzymała renderowanie 3D. Odśwież widok lub zmień zakładkę, aby wznowić.'}
             </p>
           </div>
         </div>
@@ -472,10 +479,12 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
         <span className="font-mono-num text-zinc-200">
           {Math.round(acoustics.effectiveExternalWidth)} × {Math.round(acoustics.effectiveExternalHeight)} × {Math.round(acoustics.effectiveExternalDepth)} mm
         </span>
-        <span className="whitespace-nowrap">· Płyta {params.thickness} mm</span>
+        <span className="whitespace-nowrap">
+          · {isEn ? `Board ${params.thickness} mm` : `Płyta ${params.thickness} mm`}
+        </span>
         {acoustics.slotPort?.isBent && (
           <span className="text-red-400 whitespace-nowrap">
-            · Port zagięty L ({Math.round(acoustics.slotPort.baffle1Length)}+{Math.round(acoustics.slotPort.baffle2Length)} mm)
+            · {isEn ? 'L-bent port' : 'Port zagięty L'} ({Math.round(acoustics.slotPort.baffle1Length)}+{Math.round(acoustics.slotPort.baffle2Length)} mm)
           </span>
         )}
       </div>
@@ -489,13 +498,21 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
           aria-expanded={!dockCollapsed}
         >
           {dockCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          <span>{dockCollapsed ? 'Pokaż narzędzia widoku 3D' : 'Ukryj panel 3D'}</span>
+          <span>
+            {dockCollapsed
+              ? isEn
+                ? 'Show 3D view controls'
+                : 'Pokaż narzędzia widoku 3D'
+              : isEn
+                ? 'Hide 3D panel'
+                : 'Ukryj panel 3D'}
+          </span>
         </button>
 
         {!dockCollapsed && (
           <div className="w-full bg-[#13151C]/95 border border-white/10 rounded-lg px-2.5 sm:px-4 py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-x-4 sm:gap-x-5 gap-y-2 shadow-xl">
             {/* Camera Presets */}
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full" role="group" aria-label="Widoki kamery">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full" role="group" aria-label={isEn ? 'Camera presets' : 'Widoki kamery'}>
               {(Object.keys(CAMERA_PRESETS) as CameraPresetKey[]).map((key) => (
                 <button
                   key={key}
@@ -507,14 +524,14 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
                       : 'text-zinc-300 hover:bg-white/5 hover:text-white'
                   }`}
                 >
-                  {CAMERA_PRESETS[key].label}
+                  {isEn ? CAMERA_PRESETS[key].labelEn : CAMERA_PRESETS[key].labelPl}
                 </button>
               ))}
               <button
                 type="button"
                 onClick={() => handlePresetClick('iso')}
-                title="Resetuj kamerę"
-                aria-label="Resetuj kamerę"
+                title={isEn ? 'Reset camera' : 'Resetuj kamerę'}
+                aria-label={isEn ? 'Reset camera' : 'Resetuj kamerę'}
                 className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-white/5 transition-colors shrink-0"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -525,12 +542,12 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
             <div className="flex items-center gap-2">
               <Layers className="w-3.5 h-3.5 text-red-400 shrink-0" />
               <label htmlFor="explode-slider" className="text-xs text-zinc-300 whitespace-nowrap">
-                Rozstrzelenie
+                {isEn ? 'Explode' : 'Rozstrzelenie'}
               </label>
               <input
                 id="explode-slider"
                 type="range"
-                aria-label="Rozstrzelenie modelu w procentach"
+                aria-label={isEn ? 'Exploded view percentage' : 'Rozstrzelenie modelu w procentach'}
                 min={0}
                 max={100}
                 step={1}
@@ -545,7 +562,7 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
 
             {/* Opacity & CAD Wireframe Toggles */}
             <div className="flex items-center gap-2">
-              <div className="flex items-center bg-[#0A0B0E] rounded p-0.5 border border-white/10" role="group" aria-label="Tryb przezroczystości">
+              <div className="flex items-center bg-[#0A0B0E] rounded p-0.5 border border-white/10" role="group" aria-label={isEn ? 'Opacity mode' : 'Tryb przezroczystości'}>
                 <button
                   type="button"
                   onClick={() => setOpacityMode('xray')}
@@ -562,7 +579,7 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
                     opacityMode === 'solid' ? 'bg-[#212530] text-red-400 font-medium' : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  Pełny
+                  {isEn ? 'Solid' : 'Pełny'}
                 </button>
                 <button
                   type="button"
@@ -571,7 +588,7 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
                     opacityMode === 'ghost' ? 'bg-[#212530] text-red-400 font-medium' : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  Szkielet
+                  {isEn ? 'Wireframe' : 'Szkielet'}
                 </button>
               </div>
 
@@ -586,14 +603,14 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
                 }`}
               >
                 <Eye className="w-3.5 h-3.5" />
-                <span>Krawędzie</span>
+                <span>{isEn ? 'Edges' : 'Krawędzie'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowGrid((v) => !v)}
                 aria-pressed={showGrid}
-                aria-label="Siatka CAD"
+                aria-label={isEn ? 'CAD Grid' : 'Siatka CAD'}
                 className={`p-1.5 rounded border transition-colors shrink-0 ${
                   showGrid
                     ? 'border-red-500/40 bg-red-500/10 text-red-300'

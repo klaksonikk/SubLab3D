@@ -25,6 +25,7 @@ import {
   type WdrUnitSystem,
 } from '../engine/winisdWdr';
 import type { CoilWiringMode, DriverPreset, VoiceCoilCount } from '../engine/types';
+import { useI18n } from '../i18n';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
 interface DriverTsModalProps {
@@ -69,6 +70,8 @@ export function DriverTsModal({
   onClose,
   onSaveDriver,
 }: DriverTsModalProps) {
+  const { lang } = useI18n();
+  const en = lang === 'en';
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [sizeLabel, setSizeLabel] = useState('12"');
@@ -115,12 +118,21 @@ export function DriverTsModal({
     setWdrError(null);
   }, [open, editingDriver, initialTemplateDriver]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
+
   const applyParsedWdr = (
     rawContent: string,
     fileName: string,
     unitPreference: WdrUnitPreference,
   ) => {
-    const parsed = parseWinIsdWdr(rawContent, fileName, unitPreference);
+    const parsed = parseWinIsdWdr(rawContent, fileName, unitPreference, lang);
     if (!parsed.ok) {
       setWdrError(parsed.error);
       setWdrState(null);
@@ -152,29 +164,35 @@ export function DriverTsModal({
       const text = await file.text();
       applyParsedWdr(text, file.name, 'auto');
     } catch {
-      setWdrError('Nie udało się odczytać wybranego pliku .wdr.');
+      setWdrError(
+        en ? 'Could not read the selected .wdr file.' : 'Nie udało się odczytać wybranego pliku .wdr.',
+      );
     }
     e.target.value = '';
   };
 
-  const solved = useMemo(() => solveThieleSmall(solverInput), [solverInput]);
+  const solved = useMemo(() => solveThieleSmall(solverInput, lang), [solverInput, lang]);
   const coilLoad = useMemo(
     () =>
-      computeElectricalLoad({
-        voiceCoilCount: solverInput.voiceCoilCount,
-        coilNominalOhms: solverInput.coilNominalOhms,
-        coilReOhms: solverInput.coilReOhms,
-        baseLeMh: solverInput.le,
-        coilWiring: solverInput.coilWiring,
-        driverCount: 1,
-        arrayWiring: 'parallel',
-      }),
+      computeElectricalLoad(
+        {
+          voiceCoilCount: solverInput.voiceCoilCount,
+          coilNominalOhms: solverInput.coilNominalOhms,
+          coilReOhms: solverInput.coilReOhms,
+          baseLeMh: solverInput.le,
+          coilWiring: solverInput.coilWiring,
+          driverCount: 1,
+          arrayWiring: 'parallel',
+        },
+        lang,
+      ),
     [
       solverInput.voiceCoilCount,
       solverInput.coilNominalOhms,
       solverInput.coilReOhms,
       solverInput.le,
       solverInput.coilWiring,
+      lang,
     ],
   );
 
@@ -260,7 +278,7 @@ export function DriverTsModal({
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!model.trim() && !brand.trim()) {
-      setNameError('Podaj nazwę lub model głośnika.');
+      setNameError(en ? 'Enter speaker brand or model name.' : 'Podaj nazwę lub model głośnika.');
       return;
     }
     const id =
@@ -279,6 +297,7 @@ export function DriverTsModal({
         displacement,
       },
       solverInput.le,
+      lang,
     );
     onSaveDriver(preset, applyToProjectToo, coilLoad.effectiveCoilWiring);
     onClose();
@@ -305,11 +324,17 @@ export function DriverTsModal({
             <div className="min-w-0">
               <h2 id="driver-ts-modal-title" className="text-sm font-semibold text-white leading-snug">
                 {editingDriver
-                  ? `Edytor głośnika T-S: ${editingDriver.name}`
-                  : 'Nowy własny głośnik — Baza i kalkulator T-S'}
+                  ? en
+                    ? `T-S Driver Editor: ${editingDriver.name}`
+                    : `Edytor głośnika T-S: ${editingDriver.name}`
+                  : en
+                    ? 'New Custom Driver — Database & T-S Calculator'
+                    : 'Nowy własny głośnik — Baza i kalkulator T-S'}
               </h2>
               <p className="text-[11px] text-zinc-400 line-clamp-2">
-                Wpisz parametry z noty katalogowej — wszystkie wartości T-S oraz impedancja cewek wyliczają się na żywo.
+                {en
+                  ? 'Enter datasheet parameters — all interdependent T-S values and voice coil impedance update live.'
+                  : 'Wpisz parametry z noty katalogowej — wszystkie wartości T-S oraz impedancja cewek wyliczają się na żywo.'}
               </p>
             </div>
           </div>
@@ -323,7 +348,8 @@ export function DriverTsModal({
             >
               <FileUp className="w-3.5 h-3.5" />
               <span>
-                Wczytaj .wdr<span className="hidden sm:inline"> (WinISD)</span>
+                {en ? 'Load .wdr' : 'Wczytaj .wdr'}
+                <span className="hidden sm:inline"> (WinISD)</span>
               </span>
             </button>
             <input
@@ -337,7 +363,7 @@ export function DriverTsModal({
             <button
               type="button"
               onClick={onClose}
-              aria-label="Zamknij edytor głośnika"
+              aria-label={en ? 'Close driver editor' : 'Zamknij edytor głośnika'}
               className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
             >
               <X className="w-4 h-4" />
@@ -353,7 +379,7 @@ export function DriverTsModal({
               <button
                 type="button"
                 onClick={() => setWdrError(null)}
-                aria-label="Zamknij komunikat błędu .wdr"
+                aria-label={en ? 'Dismiss .wdr error message' : 'Zamknij komunikat błędu .wdr'}
                 className="text-rose-300 hover:text-white"
               >
                 <X className="w-3.5 h-3.5" />
@@ -365,12 +391,15 @@ export function DriverTsModal({
             <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-md px-3 py-2.5 text-xs space-y-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-cyan-200">
-                  Wczytano z WinISD: <strong className="text-white">{wdrState.fileName}</strong> ·{' '}
+                  {en ? 'Loaded from WinISD: ' : 'Wczytano z WinISD: '}
+                  <strong className="text-white">{wdrState.fileName}</strong> ·{' '}
                   <span className="font-mono-num">
-                    Jednostki:{' '}
+                    {en ? 'Units: ' : 'Jednostki: '}
                     {wdrState.detectedUnitSystem === 'si'
                       ? 'WinISD Pro SI (m³, m², kg, m)'
-                      : 'Praktyczne (L, cm², g, mm)'}
+                      : en
+                        ? 'Practical (L, cm², g, mm)'
+                        : 'Praktyczne (L, cm², g, mm)'}
                   </span>
                 </div>
                 <button
@@ -384,7 +413,7 @@ export function DriverTsModal({
                   }
                   className="px-2 py-1 rounded bg-[#08090C] border border-cyan-500/40 text-[11px] text-cyan-300 hover:bg-cyan-500/15 transition-colors"
                 >
-                  Przełącz na{' '}
+                  {en ? 'Switch to ' : 'Przełącz na '}
                   {wdrState.detectedUnitSystem === 'si'
                     ? 'L / cm² / g / mm'
                     : 'SI (m³ / m² / kg / m)'}
@@ -403,10 +432,12 @@ export function DriverTsModal({
           {/* Identity & Size Row */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 bg-[#161920] border border-white/[0.08] rounded-md p-3.5">
             <label className="sm:col-span-4 space-y-1">
-              <span className="text-[11px] text-zinc-400 block">Marka (Brand)</span>
+              <span className="text-[11px] text-zinc-400 block">
+                {en ? 'Brand / Manufacturer' : 'Marka (Brand)'}
+              </span>
               <input
                 type="text"
-                placeholder="np. Deaf Bonce / Sundown"
+                placeholder={en ? 'e.g. Sundown / Dayton' : 'np. Sundown / Dayton'}
                 value={brand}
                 onChange={(e) => {
                   setBrand(e.target.value);
@@ -417,10 +448,12 @@ export function DriverTsModal({
             </label>
 
             <label className="sm:col-span-5 space-y-1">
-              <span className="text-[11px] text-zinc-400 block">Model głośnika *</span>
+              <span className="text-[11px] text-zinc-400 block">
+                {en ? 'Speaker Model *' : 'Model głośnika *'}
+              </span>
               <input
                 type="text"
-                placeholder="np. Machete MF-12R / SA-12 Rev.3"
+                placeholder={en ? 'e.g. SA-12 Rev.3 / UM12-22' : 'np. SA-12 Rev.3 / UM12-22'}
                 value={model}
                 onChange={(e) => {
                   setModel(e.target.value);
@@ -431,7 +464,9 @@ export function DriverTsModal({
             </label>
 
             <div className="sm:col-span-3 space-y-1">
-              <span className="text-[11px] text-zinc-400 block">Rozmiar kosza</span>
+              <span className="text-[11px] text-zinc-400 block">
+                {en ? 'Basket Size' : 'Rozmiar kosza'}
+              </span>
               <div className="grid grid-cols-5 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]">
                 {(['8"', '10"', '12"', '15"', '18"'] as const).map((sz) => (
                   <button
@@ -460,12 +495,14 @@ export function DriverTsModal({
             {/* Column 1: Q-Triad & Voice Coil Spec */}
             <div className="lg:col-span-4 bg-[#161920] border border-white/[0.08] rounded-md p-3.5 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-white">Dobroć Q i Cewki</span>
+                <span className="text-xs font-semibold text-white">
+                  {en ? 'Q Triad & Voice Coils' : 'Dobroć Q i Cewki'}
+                </span>
                 <button
                   type="button"
                   onClick={() => setSolverInput(driverPresetToSolverInput(initialTemplateDriver))}
                   className="inline-flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white"
-                  title="Przywróć bazowe wartości T-S"
+                  title={en ? 'Restore baseline T-S values' : 'Przywróć bazowe wartości T-S'}
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Reset</span>
@@ -478,7 +515,7 @@ export function DriverTsModal({
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
                     <label htmlFor="ts-qes" className="text-zinc-300">
-                      Qes (dobroć elektr.)
+                      {en ? 'Qes (electrical Q)' : 'Qes (dobroć elektr.)'}
                     </label>
                     <button
                       type="button"
@@ -490,7 +527,7 @@ export function DriverTsModal({
                           : 'bg-[#08090C] border-white/[0.1] text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {isQAuto('qes') ? 'AUTO' : 'Wyliczaj Qes'}
+                      {isQAuto('qes') ? 'AUTO' : en ? 'Solve Qes' : 'Wyliczaj Qes'}
                     </button>
                   </div>
                   <ImmediateNumberInput
@@ -513,7 +550,7 @@ export function DriverTsModal({
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
                     <label htmlFor="ts-qms" className="text-zinc-300">
-                      Qms (dobroć mech.)
+                      {en ? 'Qms (mechanical Q)' : 'Qms (dobroć mech.)'}
                     </label>
                     <button
                       type="button"
@@ -524,7 +561,7 @@ export function DriverTsModal({
                           : 'bg-[#08090C] border-white/[0.1] text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {isQAuto('qms') ? 'AUTO' : 'Wyliczaj Qms'}
+                      {isQAuto('qms') ? 'AUTO' : en ? 'Solve Qms' : 'Wyliczaj Qms'}
                     </button>
                   </div>
                   <ImmediateNumberInput
@@ -547,7 +584,7 @@ export function DriverTsModal({
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-[11px]">
                     <label htmlFor="ts-qts" className="text-zinc-300">
-                      Qts (dobroć całk.)
+                      {en ? 'Qts (total Q)' : 'Qts (dobroć całk.)'}
                     </label>
                     <button
                       type="button"
@@ -558,7 +595,7 @@ export function DriverTsModal({
                           : 'bg-[#08090C] border-white/[0.1] text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {isQAuto('qts') ? 'AUTO' : 'Wyliczaj Qts'}
+                      {isQAuto('qts') ? 'AUTO' : en ? 'Solve Qts' : 'Wyliczaj Qts'}
                     </button>
                   </div>
                   <ImmediateNumberInput
@@ -581,7 +618,9 @@ export function DriverTsModal({
               {/* Electrical Voice Coil Specs */}
               <div className="pt-2.5 border-t border-white/[0.06] space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-zinc-300">Ilość cewek</span>
+                  <span className="text-[11px] text-zinc-300">
+                    {en ? 'Voice Coils' : 'Ilość cewek'}
+                  </span>
                   <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]">
                     {([1, 2] as const).map((cnt) => (
                       <button
@@ -602,12 +641,14 @@ export function DriverTsModal({
 
                 {solverInput.voiceCoilCount === 2 && (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-zinc-300">Łączenie cewek</span>
+                    <span className="text-[11px] text-zinc-300">
+                      {en ? 'Coil Wiring' : 'Łączenie cewek'}
+                    </span>
                     <div className="grid grid-cols-2 gap-1 bg-[#08090C] p-0.5 rounded border border-white/[0.08]">
                       {(
                         [
-                          { id: 'parallel', label: 'Równoległe' },
-                          { id: 'series', label: 'Szeregowe' },
+                          { id: 'parallel', label: en ? 'Parallel' : 'Równoległe' },
+                          { id: 'series', label: en ? 'Series' : 'Szeregowe' },
                         ] as const
                       ).map((w) => (
                         <button
@@ -629,7 +670,9 @@ export function DriverTsModal({
 
                 <div className="grid grid-cols-3 gap-2">
                   <label className="space-y-1">
-                    <span className="text-[10px] text-zinc-400 block">Z cewki (Ω)</span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      {en ? 'Coil Z (Ω)' : 'Z cewki (Ω)'}
+                    </span>
                     <ImmediateNumberInput
                       min={0.5}
                       max={16}
@@ -642,7 +685,9 @@ export function DriverTsModal({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[10px] text-zinc-400 block">Re cewki (Ω)</span>
+                    <span className="text-[10px] text-zinc-400 block">
+                      {en ? 'Coil Re (Ω)' : 'Re cewki (Ω)'}
+                    </span>
                     <ImmediateNumberInput
                       min={0.2}
                       max={16}
@@ -654,7 +699,11 @@ export function DriverTsModal({
                   </label>
                   <label className="space-y-1">
                     <span className="text-[10px] text-zinc-400 block">
-                      {solverInput.voiceCoilCount === 2 ? 'Le szer. (mH)' : 'Le (mH)'}
+                      {solverInput.voiceCoilCount === 2
+                        ? en
+                          ? 'Le series (mH)'
+                          : 'Le szer. (mH)'
+                        : 'Le (mH)'}
                     </span>
                     <ImmediateNumberInput
                       min={0}
@@ -668,7 +717,9 @@ export function DriverTsModal({
                 </div>
 
                 <div className="bg-[#08090C] border border-cyan-500/25 rounded px-2.5 py-1.5 flex items-center justify-between text-[11px] font-mono-num">
-                  <span className="text-zinc-400">Wypadkowo (1 szt.):</span>
+                  <span className="text-zinc-400">
+                    {en ? 'Resultant (1 pc.):' : 'Wypadkowo (1 szt.):'}
+                  </span>
                   <strong className="text-cyan-300">
                     {coilLoad.singleDriverNominalOhms.toFixed(1)} Ω · Re {coilLoad.singleDriverReOhms.toFixed(2)} Ω
                   </strong>
@@ -680,7 +731,7 @@ export function DriverTsModal({
             <div className="lg:col-span-4 bg-[#161920] border border-white/[0.08] rounded-md p-3.5 space-y-3">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-white block">
-                  Mechanika membrany i zawieszenia
+                  {en ? 'Cone & Suspension Mechanics' : 'Mechanika membrany i zawieszenia'}
                 </span>
                 <div className="grid grid-cols-3 gap-1 bg-[#08090C] p-1 rounded border border-white/[0.08]">
                   {(
@@ -791,7 +842,9 @@ export function DriverTsModal({
               {/* Sd / Dd and Bl */}
               <div className="pt-2 border-t border-white/[0.06] space-y-2">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-zinc-400">Membrana Sd / Dd</span>
+                  <span className="text-zinc-400">
+                    {en ? 'Cone Area Sd / Dd' : 'Membrana Sd / Dd'}
+                  </span>
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -813,7 +866,7 @@ export function DriverTsModal({
                           : 'bg-[#08090C] text-zinc-400'
                       }`}
                     >
-                      z Dd (mm)
+                      {en ? 'from Dd (mm)' : 'z Dd (mm)'}
                     </button>
                   </div>
                 </div>
@@ -821,7 +874,11 @@ export function DriverTsModal({
                 <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
-                      {solverInput.sdInputMode === 'direct_sd' ? 'Sd (cm²)' : 'Dd efekt. (mm)'}
+                      {solverInput.sdInputMode === 'direct_sd'
+                        ? 'Sd (cm²)'
+                        : en
+                          ? 'Dd eff. (mm)'
+                          : 'Dd efekt. (mm)'}
                     </span>
                     <ImmediateNumberInput
                       min={solverInput.sdInputMode === 'direct_sd' ? 15 : 40}
@@ -855,7 +912,7 @@ export function DriverTsModal({
                             : 'bg-red-500/20 text-red-300'
                         }`}
                       >
-                        {blAuto ? 'AUTO' : 'Z Bl→Qes'}
+                        {blAuto ? 'AUTO' : en ? 'Bl→Qes' : 'Z Bl→Qes'}
                       </button>
                     </span>
                     <ImmediateNumberInput
@@ -881,7 +938,7 @@ export function DriverTsModal({
               {/* Limits & 3D Mounting */}
               <div className="bg-[#161920] border border-white/[0.08] rounded-md p-3.5 space-y-2.5">
                 <span className="text-xs font-semibold text-white block">
-                  Granice pracy i wymiary 3D
+                  {en ? 'Power Limits & 3D Mounting' : 'Granice pracy i wymiary 3D'}
                 </span>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1">
@@ -896,7 +953,9 @@ export function DriverTsModal({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Moc Pe RMS (W)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'RMS Power Pe (W)' : 'Moc Pe RMS (W)'}
+                    </span>
                     <ImmediateNumberInput
                       min={25}
                       max={15000}
@@ -907,7 +966,9 @@ export function DriverTsModal({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Otwór CAD (mm)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'CAD Cutout (mm)' : 'Otwór CAD (mm)'}
+                    </span>
                     <ImmediateNumberInput
                       min={80}
                       max={500}
@@ -918,7 +979,9 @@ export function DriverTsModal({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Kosz zewn. (mm)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'Outer Frame (mm)' : 'Kosz zewn. (mm)'}
+                    </span>
                     <ImmediateNumberInput
                       min={100}
                       max={560}
@@ -929,7 +992,9 @@ export function DriverTsModal({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Głębokość (mm)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'Depth (mm)' : 'Głębokość (mm)'}
+                    </span>
                     <ImmediateNumberInput
                       min={50}
                       max={400}
@@ -940,7 +1005,9 @@ export function DriverTsModal({
                     />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Wyporność (L)</span>
+                    <span className="text-[11px] text-zinc-400 block">
+                      {en ? 'Displacement (L)' : 'Wyporność (L)'}
+                    </span>
                     <ImmediateNumberInput
                       min={0.2}
                       max={20}
@@ -957,17 +1024,17 @@ export function DriverTsModal({
               <div className="bg-[#08090C] border border-cyan-500/30 rounded-md p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold text-cyan-300">
-                    Podgląd wyliczonych parametrów (T-S)
+                    {en ? 'Calculated T-S Readout' : 'Podgląd wyliczonych parametrów (T-S)'}
                   </span>
                   {solved.isValid ? (
                     <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400">
                       <CheckCircle2 className="w-3 h-3" />
-                      <span>Spójne</span>
+                      <span>{en ? 'Consistent' : 'Spójne'}</span>
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 text-[10px] text-amber-400">
                       <AlertTriangle className="w-3 h-3" />
-                      <span>Uwaga</span>
+                      <span>{en ? 'Warning' : 'Uwaga'}</span>
                     </span>
                   )}
                 </div>
@@ -1029,7 +1096,11 @@ export function DriverTsModal({
                 onChange={(e) => setApplyToProjectToo(e.target.checked)}
                 className="accent-red-500"
               />
-              <span>Po zapisaniu ustaw ten głośnik również jako aktywny w projekcie 3D i WSD</span>
+              <span>
+                {en
+                  ? 'After saving, set this driver active in both 3D Project & WSD'
+                  : 'Po zapisaniu ustaw ten głośnik również jako aktywny w projekcie 3D i WSD'}
+              </span>
             </label>
 
             <div className="flex items-center gap-2">
@@ -1038,14 +1109,22 @@ export function DriverTsModal({
                 onClick={onClose}
                 className="px-3.5 py-2 text-xs font-medium text-zinc-300 bg-[#161920] border border-white/[0.1] rounded hover:bg-white/[0.06] transition-colors"
               >
-                Anuluj
+                {en ? 'Cancel' : 'Anuluj'}
               </button>
               <button
                 type="submit"
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded hover:bg-red-500 transition-colors"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>{editingDriver ? 'Zapisz zmiany T-S' : 'Zapisz własny głośnik'}</span>
+                <span>
+                  {editingDriver
+                    ? en
+                      ? 'Save T-S Changes'
+                      : 'Zapisz zmiany T-S'
+                    : en
+                      ? 'Save Custom Driver'
+                      : 'Zapisz własny głośnik'}
+                </span>
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { Check, Copy, Download, Link2, Upload, X } from 'lucide-react';
 import type { AcousticResult, BoxParams, DriverPreset } from '../engine/types';
 import { buildShareUrl } from '../engine/sharing';
 import { DEFAULT_BOX_PARAMS } from '../engine/presets';
+import { useI18n } from '../i18n';
 
 interface ShareModalProps {
   open: boolean;
@@ -21,6 +22,8 @@ export function ShareModal({
   activeCustomDriver,
   onImportModel,
 }: ShareModalProps) {
+  const { lang } = useI18n();
+  const isEn = lang === 'en';
   const [copied, setCopied] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -86,13 +89,17 @@ export function ShareModal({
       const text = await file.text();
       const parsed = JSON.parse(text) as { params?: Partial<BoxParams>; customDriver?: DriverPreset };
       if (!parsed || !parsed.params || typeof parsed.params.externalWidth !== 'number') {
-        setImportError('Nieprawidłowy format pliku JSON projektu SubLab 3D.');
+        setImportError(
+          isEn
+            ? 'Invalid SubLab 3D JSON project file format.'
+            : 'Nieprawidłowy format pliku JSON projektu SubLab 3D.',
+        );
         return;
       }
       onImportModel({ ...DEFAULT_BOX_PARAMS, ...parsed.params }, parsed.customDriver);
       onClose();
     } catch {
-      setImportError('Nie udało się odczytać pliku JSON.');
+      setImportError(isEn ? 'Failed to read JSON file.' : 'Nie udało się odczytać pliku JSON.');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -108,12 +115,12 @@ export function ShareModal({
       <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto bg-[#111318] border border-white/15 rounded-lg shadow-2xl">
         <div className="px-4 sm:px-5 py-3.5 sm:py-4 border-b border-white/[0.08] flex items-center justify-between">
           <h2 id="share-modal-title" className="text-base font-semibold text-white">
-            Udostępnij lub wczytaj model
+            {isEn ? 'Share or Load Model' : 'Udostępnij lub wczytaj model'}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Zamknij okno udostępniania"
+            aria-label={isEn ? 'Close share dialog' : 'Zamknij okno udostępniania'}
             className="p-1 text-zinc-400 hover:text-white rounded hover:bg-white/5 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -125,10 +132,12 @@ export function ShareModal({
           <div className="space-y-2">
             <label htmlFor="share-url-input" className="flex items-center gap-1.5 text-xs font-medium text-zinc-300">
               <Link2 className="w-3.5 h-3.5 text-red-400" />
-              <span>Bezpośredni link do tego projektu 3D</span>
+              <span>{isEn ? 'Direct link to this 3D project' : 'Bezpośredni link do tego projektu 3D'}</span>
             </label>
             <p className="text-xs text-zinc-400">
-              Link zawiera pełne wymiary obudowy, strojenie portów oraz parametry wybranego przetwornika.
+              {isEn
+                ? 'The link encodes full enclosure dimensions, port tuning, and selected driver parameters.'
+                : 'Link zawiera pełne wymiary obudowy, strojenie portów oraz parametry wybranego przetwornika.'}
             </p>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
@@ -145,7 +154,7 @@ export function ShareModal({
                 className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Skopiowano' : 'Kopiuj link'}</span>
+                <span>{copied ? (isEn ? 'Copied' : 'Skopiowano') : isEn ? 'Copy link' : 'Kopiuj link'}</span>
               </button>
             </div>
           </div>
@@ -157,7 +166,7 @@ export function ShareModal({
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium text-white bg-[#161920] border border-white/15 rounded-md hover:bg-white/10 transition-colors whitespace-nowrap"
             >
               <Download className="w-4 h-4 text-red-400" />
-              <span>Eksportuj plik .JSON</span>
+              <span>{isEn ? 'Export .JSON file' : 'Eksportuj plik .JSON'}</span>
             </button>
 
             <button
@@ -166,7 +175,7 @@ export function ShareModal({
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-medium text-white bg-[#161920] border border-white/15 rounded-md hover:bg-white/10 transition-colors whitespace-nowrap"
             >
               <Upload className="w-4 h-4 text-cyan-400" />
-              <span>Wczytaj model .JSON</span>
+              <span>{isEn ? 'Load .JSON model' : 'Wczytaj model .JSON'}</span>
             </button>
             <input
               ref={fileInputRef}
