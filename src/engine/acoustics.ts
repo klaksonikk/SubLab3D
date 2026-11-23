@@ -8,8 +8,10 @@ import type {
   FrequencyPoint,
   PortFace,
   SlotPortGeometry,
+  UnitSystem,
   ValidationIssue,
 } from './types';
+import { formatLen, formatVel, formatVol } from './units';
 
 const SPEED_OF_SOUND_MS = 343.2;
 
@@ -890,6 +892,7 @@ function evaluateEnclosureCore(
   extH: number,
   extD: number,
   lang: AppLanguage = 'pl',
+  unitSystem: UnitSystem = 'metric',
 ): AcousticResult {
   const isEn = lang === 'en';
   const t = Math.max(6, params.thickness);
@@ -1146,8 +1149,8 @@ function evaluateEnclosureCore(
         id: 'round-port-fit',
         severity: 'error',
         message: isEn
-          ? `Port tube length (${Math.round(effectivePortLength)} mm) exceeds mounting axis clearance (${Math.max(0, Math.round(maxPortRunMm))} mm).`
-          : `Długość rury (${Math.round(effectivePortLength)} mm) przekracza wymiar roboczy osi montażu (${Math.max(0, Math.round(maxPortRunMm))} mm).`,
+          ? `Port tube length (${formatLen(effectivePortLength, unitSystem, 0, 2)}) exceeds mounting axis clearance (${formatLen(Math.max(0, maxPortRunMm), unitSystem, 0, 2)}).`
+          : `Długość rury (${formatLen(effectivePortLength, unitSystem, 0, 2)}) przekracza wymiar roboczy osi montażu (${formatLen(Math.max(0, maxPortRunMm), unitSystem, 0, 2)}).`,
       });
     }
 
@@ -1224,8 +1227,8 @@ function evaluateEnclosureCore(
         id: 'round-port-wall-fit',
         severity: 'error',
         message: isEn
-          ? `Round port Ø${Math.round(effectivePortDiameter)} mm (${params.portCount}×) extends beyond panel edge — adjust position or diameter.`
-          : `Rura Ø${Math.round(effectivePortDiameter)} mm (${params.portCount}×) wykracza poza krawędź ściany — skoryguj pozycję lub średnicę.`,
+          ? `Round port Ø${formatLen(effectivePortDiameter, unitSystem, 0, 2)} (${params.portCount}×) extends beyond panel edge — adjust position or diameter.`
+          : `Rura Ø${formatLen(effectivePortDiameter, unitSystem, 0, 2)} (${params.portCount}×) wykracza poza krawędź ściany — skoryguj pozycję lub średnicę.`,
       });
     }
   } else if (params.enclosureType === 'bandpass_4th') {
@@ -1632,8 +1635,8 @@ function evaluateEnclosureCore(
       id: 'driver-depth-fit',
       severity: 'error',
       message: isEn
-        ? `Driver magnet collides with rear wall (clearance: ${driverClearanceMm} mm, recommended min. 20 mm).`
-        : `Magnes głośnika koliduje ze ścianą (luz: ${driverClearanceMm} mm, zalecane min. 20 mm).`,
+        ? `Driver magnet collides with rear wall (clearance: ${formatLen(driverClearanceMm, unitSystem, 0, 2)}, recommended min. ${formatLen(20, unitSystem, 0, 2)}).`
+        : `Magnes głośnika koliduje ze ścianą (luz: ${formatLen(driverClearanceMm, unitSystem, 0, 2)}, zalecane min. ${formatLen(20, unitSystem, 0, 2)}).`,
     });
   }
 
@@ -1673,8 +1676,8 @@ function evaluateEnclosureCore(
         id: 'port-chuffing',
         severity: 'warning',
         message: isEn
-          ? `High port air velocity (${portVelocityMs.toFixed(1)} m/s) — audible port chuffing likely. Increase port cross-sectional area.`
-          : `Wysoka prędkość powietrza w porcie (${portVelocityMs.toFixed(1)} m/s) — możliwe słyszalne świsty (port noise). Powiększ przekrój portu.`,
+          ? `High port air velocity (${formatVel(portVelocityMs, unitSystem, 1, 1)}) — audible port chuffing likely. Increase port cross-sectional area.`
+          : `Wysoka prędkość powietrza w porcie (${formatVel(portVelocityMs, unitSystem, 1, 1)}) — możliwe słyszalne świsty (port noise). Powiększ przekrój portu.`,
       });
     }
   }
@@ -1752,7 +1755,11 @@ function evaluateEnclosureCore(
   };
 }
 
-export function calculateAcoustics(params: BoxParams, lang: AppLanguage = 'pl'): AcousticResult {
+export function calculateAcoustics(
+  params: BoxParams,
+  lang: AppLanguage = 'pl',
+  unitSystem: UnitSystem = 'metric',
+): AcousticResult {
   const isEn = lang === 'en';
   const autoField = params.boxAutoCalcField ?? 'none';
   if (autoField === 'none') {
@@ -1762,6 +1769,7 @@ export function calculateAcoustics(params: BoxParams, lang: AppLanguage = 'pl'):
       params.externalHeight,
       params.externalDepth,
       lang,
+      unitSystem,
     );
   }
 
@@ -1788,6 +1796,7 @@ export function calculateAcoustics(params: BoxParams, lang: AppLanguage = 'pl'):
       autoField === 'height' ? val : params.externalHeight,
       autoField === 'depth' ? val : params.externalDepth,
       lang,
+      unitSystem,
     );
 
   const atMin = evalWithDim(minDim);
@@ -1797,8 +1806,8 @@ export function calculateAcoustics(params: BoxParams, lang: AppLanguage = 'pl'):
         id: 'target-netvol-unreachable',
         severity: 'warning',
         message: isEn
-          ? `Target net volume (${targetNetL.toFixed(1)} L) is smaller than minimum enclosure size.`
-          : `Docelowa objętość netto (${targetNetL.toFixed(1)} L) jest mniejsza niż minimalny gabaryt płyty.`,
+          ? `Target net volume (${formatVol(targetNetL, unitSystem, 1, 2)}) is smaller than minimum enclosure size.`
+          : `Docelowa objętość netto (${formatVol(targetNetL, unitSystem, 1, 2)}) jest mniejsza niż minimalny gabaryt płyty.`,
       });
     }
     return atMin;
@@ -1810,8 +1819,8 @@ export function calculateAcoustics(params: BoxParams, lang: AppLanguage = 'pl'):
       id: 'target-netvol-unreachable',
       severity: 'error',
       message: isEn
-        ? `Target net volume (${targetNetL.toFixed(1)} L) requires a dimension exceeding ${maxDim} mm.`
-        : `Docelowa objętość netto (${targetNetL.toFixed(1)} L) wymaga wymiaru powyżej ${maxDim} mm.`,
+        ? `Target net volume (${formatVol(targetNetL, unitSystem, 1, 2)}) requires a dimension exceeding ${formatLen(maxDim, unitSystem, 0, 1)}.`
+        : `Docelowa objętość netto (${formatVol(targetNetL, unitSystem, 1, 2)}) wymaga wymiaru powyżej ${formatLen(maxDim, unitSystem, 0, 1)}.`,
     });
     return atMax;
   }

@@ -1,5 +1,13 @@
 import { Download, Printer } from 'lucide-react';
 import type { BoxParams, CutSheetSummary } from '../engine/types';
+import {
+  formatLen,
+  formatLenNum,
+  getUnitLabels,
+  toDisplayBoardArea,
+  toDisplayLen,
+  toDisplayWeightKg,
+} from '../engine/units';
 import { useI18n } from '../i18n';
 
 interface CutListViewProps {
@@ -8,20 +16,38 @@ interface CutListViewProps {
 }
 
 export function CutListView({ params, summary }: CutListViewProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const isEn = lang === 'en';
+  const isImp = unitSystem === 'imperial';
+  const u = getUnitLabels(unitSystem);
 
   const handleDownloadCsv = () => {
     const header = isEn
-      ? ['Panel', 'Qty', 'Width (mm)', 'Height (mm)', 'Thickness (mm)', 'Area (m2)', 'Notes']
-      : ['Element', 'Ilosc', 'Szerokosc (mm)', 'Wysokosc (mm)', 'Grubosc (mm)', 'Powierzchnia (m2)', 'Uwagi'];
+      ? [
+          'Panel',
+          'Qty',
+          `Width (${u.len})`,
+          `Height (${u.len})`,
+          `Thickness (${u.len})`,
+          `Area (${u.boardArea})`,
+          'Notes',
+        ]
+      : [
+          'Element',
+          'Ilosc',
+          `Szerokosc (${u.len})`,
+          `Wysokosc (${u.len})`,
+          `Grubosc (${u.len})`,
+          `Powierzchnia (${u.boardArea})`,
+          'Uwagi',
+        ];
     const rows = summary.panels.map((p) => [
       `"${p.name}"`,
       p.quantity,
-      p.width,
-      p.height,
-      p.thickness,
-      p.areaM2.toFixed(3),
+      isImp ? toDisplayLen(p.width, unitSystem).toFixed(2) : p.width,
+      isImp ? toDisplayLen(p.height, unitSystem).toFixed(2) : p.height,
+      isImp ? toDisplayLen(p.thickness, unitSystem).toFixed(2) : p.thickness,
+      toDisplayBoardArea(p.areaM2, unitSystem).toFixed(3),
       `"${p.notes}"`,
     ]);
     const csv = [header.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -29,7 +55,7 @@ export function CutListView({ params, summary }: CutListViewProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sublab-cutlist-${params.externalWidth}x${params.externalHeight}x${params.externalDepth}.csv`;
+    a.download = `sublab-cutlist-${formatLenNum(params.externalWidth, unitSystem, 0, 1)}x${formatLenNum(params.externalHeight, unitSystem, 0, 1)}x${formatLenNum(params.externalDepth, unitSystem, 0, 1)}${u.len}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -57,9 +83,11 @@ export function CutListView({ params, summary }: CutListViewProps) {
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
             {isEn ? 'Joinery:' : 'Połączenie:'} {joineryLabels[params.joineryType]} ·{' '}
-            {isEn ? 'Thickness:' : 'Grubość płyty:'} {params.thickness} mm ·{' '}
+            {isEn ? 'Thickness:' : 'Grubość płyty:'} {formatLen(params.thickness, unitSystem, 0, 2)} ·{' '}
             {isEn ? 'Total area:' : 'Łączna powierzchnia:'}{' '}
-            <span className="font-mono-num text-zinc-200">{summary.totalPanelAreaM2.toFixed(2)} m²</span>
+            <span className="font-mono-num text-zinc-200">
+              {toDisplayBoardArea(summary.totalPanelAreaM2, unitSystem).toFixed(2)} {u.boardArea}
+            </span>
           </p>
         </div>
 
@@ -96,18 +124,22 @@ export function CutListView({ params, summary }: CutListViewProps) {
                   {isEn ? 'Qty' : 'Szt.'}
                 </th>
                 <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">
-                  <span className="sm:hidden">A (mm)</span>
-                  <span className="hidden sm:inline">{isEn ? 'Dim A (mm)' : 'Wymiar A (mm)'}</span>
+                  <span className="sm:hidden">A ({u.len})</span>
+                  <span className="hidden sm:inline">
+                    {isEn ? `Dim A (${u.len})` : `Wymiar A (${u.len})`}
+                  </span>
                 </th>
                 <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">
-                  <span className="sm:hidden">B (mm)</span>
-                  <span className="hidden sm:inline">{isEn ? 'Dim B (mm)' : 'Wymiar B (mm)'}</span>
+                  <span className="sm:hidden">B ({u.len})</span>
+                  <span className="hidden sm:inline">
+                    {isEn ? `Dim B (${u.len})` : `Wymiar B (${u.len})`}
+                  </span>
                 </th>
                 <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">
                   {isEn ? 'Thk.' : 'Gr.'}
                 </th>
                 <th className="py-2.5 px-2 sm:py-3 sm:px-4 text-right whitespace-nowrap">
-                  {isEn ? 'Area (m²)' : 'Pow. (m²)'}
+                  {isEn ? `Area (${u.boardArea})` : `Pow. (${u.boardArea})`}
                 </th>
                 <th className="py-2.5 px-2.5 sm:py-3 sm:px-4 whitespace-nowrap">
                   {isEn ? 'Machining / Cutouts' : 'Obróbka / Wycięcia'}
@@ -121,10 +153,18 @@ export function CutListView({ params, summary }: CutListViewProps) {
                   <td className="py-2.5 px-1.5 sm:py-3 sm:px-4 text-right font-mono-num text-red-400 font-semibold whitespace-nowrap">
                     {panel.quantity}×
                   </td>
-                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-white whitespace-nowrap">{panel.width}</td>
-                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-white whitespace-nowrap">{panel.height}</td>
-                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-zinc-400 whitespace-nowrap">{panel.thickness} mm</td>
-                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-zinc-300 whitespace-nowrap">{panel.areaM2.toFixed(3)}</td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-white whitespace-nowrap">
+                    {formatLenNum(panel.width, unitSystem, 0, 2)}
+                  </td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-white whitespace-nowrap">
+                    {formatLenNum(panel.height, unitSystem, 0, 2)}
+                  </td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-zinc-400 whitespace-nowrap">
+                    {formatLen(panel.thickness, unitSystem, 0, 2)}
+                  </td>
+                  <td className="py-2.5 px-2 sm:py-3 sm:px-4 text-right font-mono-num text-zinc-300 whitespace-nowrap">
+                    {toDisplayBoardArea(panel.areaM2, unitSystem).toFixed(isImp ? 2 : 3)}
+                  </td>
                   <td className="py-2.5 px-2.5 sm:py-3 sm:px-4 text-zinc-400 min-w-[180px]">{panel.notes}</td>
                 </tr>
               ))}
@@ -151,12 +191,12 @@ export function CutListView({ params, summary }: CutListViewProps) {
             {isEn ? 'Net board area' : 'Powierzchnia netto płyt'}
           </div>
           <div className="font-mono-num text-xl font-semibold text-white mt-1">
-            {summary.totalPanelAreaM2.toFixed(2)} m²
+            {toDisplayBoardArea(summary.totalPanelAreaM2, unitSystem).toFixed(2)} {u.boardArea}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1">
             {isEn
-              ? `Required ${summary.sheetWidth}×${summary.sheetHeight} mm sheets: ${summary.sheetCount} ${qtySuffix}`
-              : `Zapotrzebowanie na arkusze ${summary.sheetWidth}×${summary.sheetHeight} mm: ${summary.sheetCount} ${qtySuffix}`}
+              ? `Required ${formatLenNum(summary.sheetWidth, unitSystem, 0, 1)}×${formatLenNum(summary.sheetHeight, unitSystem, 0, 1)} ${u.len} sheets: ${summary.sheetCount} ${qtySuffix}`
+              : `Zapotrzebowanie na arkusze ${formatLenNum(summary.sheetWidth, unitSystem, 0, 1)}×${formatLenNum(summary.sheetHeight, unitSystem, 0, 1)} ${u.len}: ${summary.sheetCount} ${qtySuffix}`}
           </div>
         </div>
         <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4">
@@ -164,7 +204,7 @@ export function CutListView({ params, summary }: CutListViewProps) {
             {isEn ? 'Estimated empty box weight' : 'Szacowana waga samej skrzyni'}
           </div>
           <div className="font-mono-num text-xl font-semibold text-red-400 mt-1">
-            {summary.estimatedWeightKg.toFixed(1)} kg
+            {toDisplayWeightKg(summary.estimatedWeightKg, unitSystem).toFixed(1)} {u.weight}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1">
             {isEn ? 'Excluding subwoofers & terminal hardware' : 'Bez masy głośników i terminala'}
@@ -174,3 +214,4 @@ export function CutListView({ params, summary }: CutListViewProps) {
     </div>
   );
 }
+

@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, Eye, Grid3x3, Layers, RotateCcw } from 'lucide-
 import type { AcousticResult, BoxParams } from '../engine/types';
 import { createContactShadowTexture, createMaterialBank, type MaterialBank } from '../engine/materials3d';
 import { buildEnclosureScene, type BuiltEnclosure } from '../engine/sceneBuilder';
+import { formatLen, formatLenNum, getUnitLabels } from '../engine/units';
 import { useI18n } from '../i18n';
 
 interface Viewport3DProps {
@@ -28,8 +29,9 @@ const _targetCamPos = new THREE.Vector3();
 const _targetLookAt = new THREE.Vector3();
 
 export function Viewport3D({ params, acoustics }: Viewport3DProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const isEn = lang === 'en';
+  const u = getUnitLabels(unitSystem);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const [opacityMode, setOpacityMode] = useState<'xray' | 'solid' | 'ghost'>('xray');
   const [explodeFactor, setExplodeFactor] = useState<number>(0);
@@ -477,14 +479,18 @@ export function Viewport3D({ params, acoustics }: Viewport3DProps) {
       {/* Subtle corner dimension summary (clean unboxed text, top-left) */}
       <div className="pointer-events-none absolute top-2.5 left-3 right-3 sm:top-4 sm:left-4 sm:right-auto z-10 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] sm:text-xs text-zinc-400">
         <span className="font-mono-num text-zinc-200">
-          {Math.round(acoustics.effectiveExternalWidth)} × {Math.round(acoustics.effectiveExternalHeight)} × {Math.round(acoustics.effectiveExternalDepth)} mm
+          {formatLenNum(acoustics.effectiveExternalWidth, unitSystem, 0, 2)} ×{' '}
+          {formatLenNum(acoustics.effectiveExternalHeight, unitSystem, 0, 2)} ×{' '}
+          {formatLenNum(acoustics.effectiveExternalDepth, unitSystem, 0, 2)} {u.len}
         </span>
         <span className="whitespace-nowrap">
-          · {isEn ? `Board ${params.thickness} mm` : `Płyta ${params.thickness} mm`}
+          · {isEn ? 'Board' : 'Płyta'} {formatLen(params.thickness, unitSystem, 0, 2)}
         </span>
         {acoustics.slotPort?.isBent && (
           <span className="text-red-400 whitespace-nowrap">
-            · {isEn ? 'L-bent port' : 'Port zagięty L'} ({Math.round(acoustics.slotPort.baffle1Length)}+{Math.round(acoustics.slotPort.baffle2Length)} mm)
+            · {isEn ? 'L-bent port' : 'Port zagięty L'} (
+            {formatLenNum(acoustics.slotPort.baffle1Length, unitSystem, 0, 2)}+
+            {formatLenNum(acoustics.slotPort.baffle2Length, unitSystem, 0, 2)} {u.len})
           </span>
         )}
       </div>

@@ -1,4 +1,11 @@
 import type { BoxParams, CutSheetSummary } from '../engine/types';
+import {
+  formatLen,
+  formatLenNum,
+  fromDisplayLen,
+  getUnitLabels,
+  toDisplayLen,
+} from '../engine/units';
 import { useI18n } from '../i18n';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
@@ -9,8 +16,10 @@ interface SheetNestingViewProps {
 }
 
 export function SheetNestingView({ params, summary, onChange }: SheetNestingViewProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const isEn = lang === 'en';
+  const isImp = unitSystem === 'imperial';
+  const u = getUnitLabels(unitSystem);
   const sheets = Array.from({ length: Math.max(1, summary.sheetCount) }, (_, idx) => ({
     index: idx,
     items: summary.placedPanels.filter((p) => p.sheetIndex === idx),
@@ -35,7 +44,9 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
             {isEn ? 'Sheets:' : 'Liczba arkuszy:'}{' '}
             <strong className="font-mono-num text-white">{summary.sheetCount}</strong> ·{' '}
             {isEn ? 'Saw kerf:' : 'Rzaz piły:'}{' '}
-            <strong className="font-mono-num text-white">{params.sawKerf} mm</strong>
+            <strong className="font-mono-num text-white">
+              {formatLen(params.sawKerf, unitSystem, 1, 2)}
+            </strong>
           </p>
         </div>
 
@@ -54,13 +65,31 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
               className="w-full sm:w-auto bg-[#161920] border border-white/15 rounded-md px-3 py-1.5 text-xs text-white font-mono-num focus:outline-none focus:border-red-500"
             >
               <option value="2500x1250">
-                {isEn ? 'Sheet 2500 × 1250 mm (Plywood)' : 'Arkusz 2500 × 1250 mm (Sklejka)'}
+                {isImp
+                  ? isEn
+                    ? 'Sheet 98.4 × 49.2 in (Euro Plywood)'
+                    : 'Arkusz 98.4 × 49.2 in (Sklejka)'
+                  : isEn
+                    ? 'Sheet 2500 × 1250 mm (Plywood)'
+                    : 'Arkusz 2500 × 1250 mm (Sklejka)'}
               </option>
               <option value="2440x1220">
-                {isEn ? 'Sheet 2440 × 1220 mm (Std MDF)' : 'Arkusz 2440 × 1220 mm (MDF std)'}
+                {isImp
+                  ? isEn
+                    ? 'Sheet 96.1 × 48.0 in (4×8 ft MDF)'
+                    : 'Arkusz 96.1 × 48.0 in (MDF std)'
+                  : isEn
+                    ? 'Sheet 2440 × 1220 mm (Std MDF)'
+                    : 'Arkusz 2440 × 1220 mm (MDF std)'}
               </option>
               <option value="2800x2070">
-                {isEn ? 'Sheet 2800 × 2070 mm (Cabinet)' : 'Arkusz 2800 × 2070 mm (Stolarski)'}
+                {isImp
+                  ? isEn
+                    ? 'Sheet 110.2 × 81.5 in (Cabinet)'
+                    : 'Arkusz 110.2 × 81.5 in (Stolarski)'
+                  : isEn
+                    ? 'Sheet 2800 × 2070 mm (Cabinet)'
+                    : 'Arkusz 2800 × 2070 mm (Stolarski)'}
               </option>
             </select>
           </div>
@@ -71,14 +100,14 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
             </label>
             <ImmediateNumberInput
               id="saw-kerf"
-              value={params.sawKerf}
+              value={toDisplayLen(params.sawKerf, unitSystem)}
               min={0}
-              max={10}
-              decimals={1}
-              onChange={(sawKerf) => onChange({ sawKerf })}
+              max={toDisplayLen(10, unitSystem)}
+              decimals={isImp ? 2 : 1}
+              onChange={(val) => onChange({ sawKerf: fromDisplayLen(val, unitSystem) })}
               className="w-12 bg-transparent text-right font-mono-num text-xs text-white focus:outline-none"
             />
-            <span className="text-[11px] text-zinc-500">mm</span>
+            <span className="text-[11px] text-zinc-500">{u.len}</span>
           </div>
         </div>
       </div>
@@ -105,7 +134,9 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
           <div key={sheet.index} className="bg-[#111318] border border-white/[0.08] rounded-lg p-4 space-y-3">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-white">
-                {isEn ? 'Sheet' : 'Arkusz'} #{sheet.index + 1} ({params.sheetWidth} × {params.sheetHeight} mm)
+                {isEn ? 'Sheet' : 'Arkusz'} #{sheet.index + 1} (
+                {formatLenNum(params.sheetWidth, unitSystem, 0, 1)} ×{' '}
+                {formatLenNum(params.sheetHeight, unitSystem, 0, 1)} {u.len})
               </span>
               <span className="font-mono-num text-zinc-400">
                 {sheet.items.length} {isEn ? 'panels on sheet' : 'formatek na arkuszu'}
@@ -144,7 +175,7 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
               {sheet.items.map((item) => {
                 const st = categoryStyles[item.category];
                 const clipId = `clip-${sheet.index}-${item.panelId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-                const dimText = `${item.width} × ${item.height} mm${item.rotated ? ' ↻' : ''}`;
+                const dimText = `${formatLenNum(item.width, unitSystem, 0, 2)} × ${formatLenNum(item.height, unitSystem, 0, 2)} ${u.len}${item.rotated ? ' ↻' : ''}`;
                 const shortName = item.name.length > 20 ? `${item.name.slice(0, 19)}…` : item.name;
                 const maxFontByWidth = Math.floor((item.width * 0.86) / Math.max(8, shortName.length * 0.56));
                 const maxFontByHeight = Math.floor(item.height * 0.14);
@@ -201,3 +232,4 @@ export function SheetNestingView({ params, summary, onChange }: SheetNestingView
     </div>
   );
 }
+

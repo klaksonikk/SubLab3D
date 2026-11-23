@@ -1,4 +1,5 @@
 export type AppLanguage = 'pl' | 'en';
+export type UnitSystem = 'metric' | 'imperial';
 
 export type EnclosureType =
   | 'vented_slot'

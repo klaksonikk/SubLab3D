@@ -1,5 +1,14 @@
 import { useState } from 'react';
 import type { AcousticResult, BoxParams } from '../engine/types';
+import {
+  formatLen,
+  formatVel,
+  formatVol,
+  getUnitLabels,
+  toDisplayAreaPerVol,
+  toDisplayLen,
+  toDisplayVel,
+} from '../engine/units';
 import { useI18n } from '../i18n';
 
 interface AcousticChartProps {
@@ -8,15 +17,17 @@ interface AcousticChartProps {
 }
 
 export function AcousticChart({ params, acoustics }: AcousticChartProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const isEn = lang === 'en';
+  const isImp = unitSystem === 'imperial';
+  const u = getUnitLabels(unitSystem);
   const [hoverHz, setHoverHz] = useState<number | null>(null);
   const [chartMode, setChartMode] = useState<'spl' | 'velocity' | 'excursion'>('spl');
 
   const curve = acoustics.responseCurve;
   const W = 820;
   const H = 360;
-  const padL = 56;
+  const padL = 62;
   const padR = 24;
   const padT = 24;
   const padB = 42;
@@ -58,6 +69,14 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
         ? [0, 10, 17, 25, yMax]
         : [0, Math.round(params.driverXmax * 0.5), params.driverXmax, Math.round(yMax)];
 
+  const formatYTick = (val: number) => {
+    if (chartMode === 'spl') return `${val} dB`;
+    if (chartMode === 'velocity') {
+      return isImp ? `${Math.round(toDisplayVel(val, unitSystem))} ft/s` : `${val} m/s`;
+    }
+    return isImp ? `${toDisplayLen(val, unitSystem).toFixed(2)} in` : `${val} mm`;
+  };
+
   const hoveredPoint =
     hoverHz !== null
       ? curve.reduce((best, pt) => (Math.abs(pt.hz - hoverHz) < Math.abs(best.hz - hoverHz) ? pt : best), curve[0])
@@ -80,7 +99,7 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
           </h2>
           <p className="text-xs text-zinc-400 mt-0.5">
             {isEn ? 'Thiele-Small Simulation (15–150 Hz) · Driver' : 'Symulacja Thiele-Small (15–150 Hz) · Głośnik'} Fs{' '}
-            {params.driverFs} Hz · Qts {params.driverQts} · Vas {params.driverVas} L
+            {params.driverFs} Hz · Qts {params.driverQts} · Vas {formatVol(params.driverVas, unitSystem, 1, 2)}
           </p>
         </div>
 
@@ -106,8 +125,10 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
               chartMode === 'velocity' ? 'bg-red-600 text-white' : 'text-zinc-300 hover:text-white'
             }`}
           >
-            <span className="sm:hidden">Port (m/s)</span>
-            <span className="hidden sm:inline">{isEn ? 'Port Velocity (m/s)' : 'Prędkość w porcie (m/s)'}</span>
+            <span className="sm:hidden">Port ({u.vel})</span>
+            <span className="hidden sm:inline">
+              {isEn ? `Port Velocity (${u.vel})` : `Prędkość w porcie (${u.vel})`}
+            </span>
           </button>
           <button
             type="button"
@@ -116,8 +137,12 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
               chartMode === 'excursion' ? 'bg-red-600 text-white' : 'text-zinc-300 hover:text-white'
             }`}
           >
-            <span className="sm:hidden">{isEn ? 'Excur. (mm)' : 'Wychył (mm)'}</span>
-            <span className="hidden sm:inline">{isEn ? 'Cone Excursion (mm)' : 'Wychył membrany (mm)'}</span>
+            <span className="sm:hidden">
+              {isEn ? `Excur. (${u.len})` : `Wychył (${u.len})`}
+            </span>
+            <span className="hidden sm:inline">
+              {isEn ? `Cone Excursion (${u.len})` : `Wychył membrany (${u.len})`}
+            </span>
           </button>
         </div>
       </div>
@@ -191,8 +216,7 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
                   fontSize="11"
                   fontFamily="JetBrains Mono, monospace"
                 >
-                  {val}
-                  {chartMode === 'spl' ? ' dB' : chartMode === 'velocity' ? ' m/s' : ' mm'}
+                  {formatYTick(val)}
                 </text>
               </g>
             );
@@ -292,12 +316,16 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
                 {params.enclosureType !== 'sealed' && (
                   <span className="text-zinc-400">
                     {isEn ? 'Port velocity:' : 'Prędkość portu:'}{' '}
-                    <strong className="text-cyan-300">{hoveredPoint.portVelocityMs.toFixed(1)} m/s</strong>
+                    <strong className="text-cyan-300">
+                      {formatVel(hoveredPoint.portVelocityMs, unitSystem, 1, 1)}
+                    </strong>
                   </span>
                 )}
                 <span className="text-zinc-400">
                   {isEn ? 'Excursion:' : 'Wychył:'}{' '}
-                  <strong className="text-white">{hoveredPoint.excursionMm.toFixed(1)} mm</strong>
+                  <strong className="text-white">
+                    {formatLen(hoveredPoint.excursionMm, unitSystem, 1, 2)}
+                  </strong>
                 </span>
               </>
             )}
@@ -308,11 +336,11 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
               ? '0 dB / -3 dB'
               : chartMode === 'velocity'
                 ? isEn
-                  ? 'Chuffing threshold 25 m/s'
-                  : 'Próg świstu 25 m/s'
+                  ? `Chuffing threshold ${formatVel(25, unitSystem, 0, 1)}`
+                  : `Próg świstu ${formatVel(25, unitSystem, 0, 1)}`
                 : isEn
-                  ? `Xmax limit (${params.driverXmax} mm)`
-                  : `Limit Xmax (${params.driverXmax} mm)`}
+                  ? `Xmax limit (${formatLen(params.driverXmax, unitSystem, 1, 2)})`
+                  : `Limit Xmax (${formatLen(params.driverXmax, unitSystem, 1, 2)})`}
           </div>
         </div>
       </div>
@@ -356,20 +384,25 @@ export function AcousticChart({ params, acoustics }: AcousticChartProps) {
 
         <div className="bg-[#111318] border border-white/[0.08] rounded-lg p-4">
           <div className="text-xs text-zinc-400">
-            {isEn ? 'Port area per liter' : 'Stosunek portu do objętości'}
+            {isEn ? 'Port area per volume' : 'Stosunek portu do objętości'}
           </div>
           <div className="font-mono-num text-xl font-semibold text-white mt-1">
             {params.enclosureType === 'sealed'
               ? '—'
-              : `${acoustics.portAreaPerLiterCm2.toFixed(2)} cm²/L`}
+              : `${toDisplayAreaPerVol(acoustics.portAreaPerLiterCm2, unitSystem).toFixed(2)} ${u.areaPerVol}`}
           </div>
           <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
-            {isEn
-              ? 'Optimal range for daily & SQL enclosures is 11–16 cm² of port area per net liter.'
-              : 'Optymalny zakres dla obudów codziennych i SQL wynosi 11–16 cm² przekroju portu na każdy litr objętości netto.'}
+            {isImp
+              ? isEn
+                ? 'Optimal range for daily & SQL enclosures is 48–70 in² of port area per net ft³.'
+                : 'Optymalny zakres dla obudów codziennych i SQL wynosi 48–70 in² przekroju portu na 1 ft³ netto.'
+              : isEn
+                ? 'Optimal range for daily & SQL enclosures is 11–16 cm² of port area per net liter.'
+                : 'Optymalny zakres dla obudów codziennych i SQL wynosi 11–16 cm² przekroju portu na każdy litr objętości netto.'}
           </p>
         </div>
       </div>
     </div>
   );
 }
+

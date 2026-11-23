@@ -160,7 +160,7 @@ function loadInitialState(): {
 }
 
 export default function App() {
-  const { lang, setLang } = useI18n();
+  const { lang, setLang, unitSystem, setUnitSystem } = useI18n();
   const isEn = lang === 'en';
   const initial = useMemo(() => loadInitialState(), []);
   const [params, setParams] = useState<BoxParams>(initial.params);
@@ -199,10 +199,13 @@ export default function App() {
     }
   }, [customDrivers]);
 
-  const acoustics = useMemo(() => calculateAcoustics(params, lang), [params, lang]);
+  const acoustics = useMemo(
+    () => calculateAcoustics(params, lang, unitSystem),
+    [params, lang, unitSystem],
+  );
   const cutPanels = useMemo(
-    () => generateCutList(params, acoustics, lang),
-    [params, acoustics, lang],
+    () => generateCutList(params, acoustics, lang, unitSystem),
+    [params, acoustics, lang, unitSystem],
   );
   const sheetSummary = useMemo(
     () => optimizeCutSheet(params, cutPanels, lang),
@@ -321,7 +324,7 @@ export default function App() {
             <img
               src="./assets/sublab3d-logo-wide.png"
               alt="SubLab 3D — Precision Bass Management"
-              className="h-6 sm:h-9 lg:h-10 w-auto object-contain select-none"
+              className="h-5 sm:h-9 lg:h-10 w-auto object-contain select-none"
             />
           </a>
 
@@ -346,7 +349,45 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="shrink-0 flex items-center gap-1.5 sm:gap-2">
+          <div className="shrink-0 flex items-center gap-1 sm:gap-2">
+            {/* Unit System Switcher Metric | Imperial */}
+            <div
+              role="group"
+              aria-label={isEn ? 'Measurement units' : 'Jednostki miary'}
+              className="inline-flex items-center bg-[#0A0B0E] border border-white/[0.14] rounded-md p-0.5 shrink-0"
+            >
+              <button
+                type="button"
+                data-testid="unit-btn-metric"
+                onClick={() => setUnitSystem('metric')}
+                aria-pressed={unitSystem === 'metric'}
+                title={isEn ? 'Metric units (mm, L, cm²)' : 'Jednostki metryczne (mm, L, cm²)'}
+                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
+                  unitSystem === 'metric'
+                    ? 'bg-red-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <span className="md:hidden">MM</span>
+                <span className="hidden md:inline">{isEn ? 'Metric' : 'Metr.'}</span>
+              </button>
+              <button
+                type="button"
+                data-testid="unit-btn-imperial"
+                onClick={() => setUnitSystem('imperial')}
+                aria-pressed={unitSystem === 'imperial'}
+                title={isEn ? 'Imperial units (in, ft³, in²)' : 'Jednostki imperialne (in, ft³, in²)'}
+                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
+                  unitSystem === 'imperial'
+                    ? 'bg-red-600 text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <span className="md:hidden">IN</span>
+                <span className="hidden md:inline">Imperial</span>
+              </button>
+            </div>
+
             {/* Language Switcher PL | EN */}
             <div
               role="group"
@@ -358,7 +399,7 @@ export default function App() {
                 data-testid="lang-btn-pl"
                 onClick={() => setLang('pl')}
                 aria-pressed={lang === 'pl'}
-                className={`px-1.5 sm:px-2 py-1 text-[11px] font-semibold rounded transition-colors ${
+                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
                   lang === 'pl'
                     ? 'bg-red-600 text-white'
                     : 'text-zinc-400 hover:text-white'
@@ -371,7 +412,7 @@ export default function App() {
                 data-testid="lang-btn-en"
                 onClick={() => setLang('en')}
                 aria-pressed={lang === 'en'}
-                className={`px-1.5 sm:px-2 py-1 text-[11px] font-semibold rounded transition-colors ${
+                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
                   lang === 'en'
                     ? 'bg-red-600 text-white'
                     : 'text-zinc-400 hover:text-white'

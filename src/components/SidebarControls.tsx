@@ -32,6 +32,20 @@ import type {
   SlotPortSide,
   VoiceCoilCount,
 } from '../engine/types';
+import {
+  formatLen,
+  formatLenNum,
+  formatVolNum,
+  fromDisplayArea,
+  fromDisplayLen,
+  fromDisplayVol,
+  getUnitLabels,
+  toDisplayArea,
+  toDisplayLen,
+  toDisplayMassG,
+  toDisplaySmallVol,
+  toDisplayVol,
+} from '../engine/units';
 import { formatDecimal, useI18n } from '../i18n';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
@@ -88,7 +102,7 @@ function ImmediateNumberRow({
           onChange={onChange}
           className="w-20 sm:w-24 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1 text-right font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
         />
-        <span className="text-[11px] text-zinc-500 w-6 sm:w-7">{unit}</span>
+        <span className="text-[11px] text-zinc-500 w-7 sm:w-8 whitespace-nowrap">{unit}</span>
       </div>
     </div>
   );
@@ -119,7 +133,7 @@ function ReadOnlyComputedField({ id, label, valueText, unit, hint }: ReadOnlyCom
             value={valueText}
             className="w-20 sm:w-24 bg-[#08090C] border border-white/[0.08] rounded px-2 py-1 text-right font-mono-num text-xs text-zinc-300 cursor-not-allowed select-all focus:outline-none"
           />
-          <span className="text-[11px] text-zinc-500 w-6 sm:w-7">{unit}</span>
+          <span className="text-[11px] text-zinc-500 w-7 sm:w-8 whitespace-nowrap">{unit}</span>
         </div>
       </div>
       {hint && <p className="text-[11px] text-zinc-500 leading-snug">{hint}</p>}
@@ -167,8 +181,10 @@ export function SidebarControls({
   mobileDrawerOpen = false,
   onCloseMobileDrawer,
 }: SidebarControlsProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const en = lang === 'en';
+  const u = getUnitLabels(unitSystem);
+  const isImp = unitSystem === 'imperial';
   const [openSection, setOpenSection] = useState<'box' | 'port' | 'driver'>('box');
 
   const enclosureTypes: Array<{ id: EnclosureType; label: string }> = [
@@ -468,19 +484,23 @@ export function SidebarControls({
                 <ReadOnlyComputedField
                   id="ext-width-auto"
                   label={en ? 'External Width (W)' : 'Szerokość zewnętrzna (W)'}
-                  valueText={formatDecimal(acoustics.effectiveExternalWidth, 1, lang)}
-                  unit="mm"
+                  valueText={formatDecimal(
+                    toDisplayLen(acoustics.effectiveExternalWidth, unitSystem),
+                    isImp ? 2 : 1,
+                    lang,
+                  )}
+                  unit={u.len}
                 />
               ) : (
                 <ImmediateNumberRow
                   id="ext-width"
                   label={en ? 'External Width (W)' : 'Szerokość zewnętrzna (W)'}
-                  value={params.externalWidth}
-                  min={220}
-                  max={1800}
-                  decimals={0}
-                  unit="mm"
-                  onChange={(externalWidth) => onChange({ externalWidth })}
+                  value={toDisplayLen(params.externalWidth, unitSystem)}
+                  min={toDisplayLen(220, unitSystem)}
+                  max={toDisplayLen(1800, unitSystem)}
+                  decimals={isImp ? 2 : 0}
+                  unit={u.len}
+                  onChange={(val) => onChange({ externalWidth: fromDisplayLen(val, unitSystem) })}
                 />
               )}
 
@@ -488,19 +508,23 @@ export function SidebarControls({
                 <ReadOnlyComputedField
                   id="ext-height-auto"
                   label={en ? 'External Height (H)' : 'Wysokość zewnętrzna (H)'}
-                  valueText={formatDecimal(acoustics.effectiveExternalHeight, 1, lang)}
-                  unit="mm"
+                  valueText={formatDecimal(
+                    toDisplayLen(acoustics.effectiveExternalHeight, unitSystem),
+                    isImp ? 2 : 1,
+                    lang,
+                  )}
+                  unit={u.len}
                 />
               ) : (
                 <ImmediateNumberRow
                   id="ext-height"
                   label={en ? 'External Height (H)' : 'Wysokość zewnętrzna (H)'}
-                  value={params.externalHeight}
-                  min={180}
-                  max={1400}
-                  decimals={0}
-                  unit="mm"
-                  onChange={(externalHeight) => onChange({ externalHeight })}
+                  value={toDisplayLen(params.externalHeight, unitSystem)}
+                  min={toDisplayLen(180, unitSystem)}
+                  max={toDisplayLen(1400, unitSystem)}
+                  decimals={isImp ? 2 : 0}
+                  unit={u.len}
+                  onChange={(val) => onChange({ externalHeight: fromDisplayLen(val, unitSystem) })}
                 />
               )}
 
@@ -508,19 +532,23 @@ export function SidebarControls({
                 <ReadOnlyComputedField
                   id="ext-depth-auto"
                   label={en ? 'External Depth (D)' : 'Głębokość zewnętrzna (D)'}
-                  valueText={formatDecimal(acoustics.effectiveExternalDepth, 1, lang)}
-                  unit="mm"
+                  valueText={formatDecimal(
+                    toDisplayLen(acoustics.effectiveExternalDepth, unitSystem),
+                    isImp ? 2 : 1,
+                    lang,
+                  )}
+                  unit={u.len}
                 />
               ) : (
                 <ImmediateNumberRow
                   id="ext-depth"
                   label={en ? 'External Depth (D)' : 'Głębokość zewnętrzna (D)'}
-                  value={params.externalDepth}
-                  min={160}
-                  max={1400}
-                  decimals={0}
-                  unit="mm"
-                  onChange={(externalDepth) => onChange({ externalDepth })}
+                  value={toDisplayLen(params.externalDepth, unitSystem)}
+                  min={toDisplayLen(160, unitSystem)}
+                  max={toDisplayLen(1400, unitSystem)}
+                  decimals={isImp ? 2 : 0}
+                  unit={u.len}
+                  onChange={(val) => onChange({ externalDepth: fromDisplayLen(val, unitSystem) })}
                 />
               )}
 
@@ -530,26 +558,36 @@ export function SidebarControls({
                   <ImmediateNumberRow
                     id="target-net-vol"
                     label={en ? 'Net Volume (Vnet)' : 'Objętość netto (Vnet)'}
-                    value={params.targetNetVolumeL}
-                    min={6}
-                    max={800}
-                    decimals={1}
-                    unit="L"
-                    onChange={(targetNetVolumeL) => onChange({ targetNetVolumeL })}
+                    value={toDisplayVol(params.targetNetVolumeL, unitSystem)}
+                    min={toDisplayVol(6, unitSystem)}
+                    max={toDisplayVol(800, unitSystem)}
+                    decimals={isImp ? 2 : 1}
+                    unit={u.vol}
+                    onChange={(val) =>
+                      onChange({ targetNetVolumeL: fromDisplayVol(val, unitSystem) })
+                    }
                   />
                 ) : (
                   <ReadOnlyComputedField
                     id="net-vol-auto"
                     label={en ? 'Net Volume (Vnet)' : 'Objętość netto (Vnet)'}
-                    valueText={formatDecimal(acoustics.netVolumeL, 2, lang)}
-                    unit="L"
+                    valueText={formatDecimal(
+                      toDisplayVol(acoustics.netVolumeL, unitSystem),
+                      isImp ? 2 : 2,
+                      lang,
+                    )}
+                    unit={u.vol}
                   />
                 )}
                 <ReadOnlyComputedField
                   id="gross-vol-auto"
                   label={en ? 'Total Internal Volume (Gross)' : 'Całkowita obj. wewnętrzna (Brutto)'}
-                  valueText={formatDecimal(acoustics.grossVolumeL, 2, lang)}
-                  unit="L"
+                  valueText={formatDecimal(
+                    toDisplayVol(acoustics.grossVolumeL, unitSystem),
+                    isImp ? 2 : 2,
+                    lang,
+                  )}
+                  unit={u.vol}
                 />
                 <div className="text-[10px] text-zinc-500">
                   {en
@@ -589,11 +627,11 @@ export function SidebarControls({
                     onChange={(e) => onChange({ thickness: Number(e.target.value) })}
                     className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 text-xs text-white font-mono-num focus:outline-none focus:border-red-500"
                   >
-                    <option value={15}>15 mm</option>
-                    <option value={18}>18 mm</option>
-                    <option value={19}>19 mm</option>
-                    <option value={22}>22 mm</option>
-                    <option value={25}>25 mm</option>
+                    {[15, 18, 19, 22, 25].map((t) => (
+                      <option key={t} value={t}>
+                        {isImp ? `${toDisplayLen(t, unitSystem).toFixed(2)} in` : `${t} mm`}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -629,12 +667,12 @@ export function SidebarControls({
               <ImmediateNumberRow
                 id="bracing-vol"
                 label={en ? 'Bracing Displacement' : 'Wyporność wzmocnień (Bracing)'}
-                value={params.bracingVolumeL}
+                value={toDisplayVol(params.bracingVolumeL, unitSystem)}
                 min={0}
-                max={30}
-                decimals={2}
-                unit="L"
-                onChange={(bracingVolumeL) => onChange({ bracingVolumeL })}
+                max={toDisplayVol(30, unitSystem)}
+                decimals={isImp ? 3 : 2}
+                unit={u.vol}
+                onChange={(val) => onChange({ bracingVolumeL: fromDisplayVol(val, unitSystem) })}
               />
             </div>
           )}
@@ -847,25 +885,35 @@ export function SidebarControls({
                       <ImmediateNumberRow
                         id="target-area-round"
                         label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
-                        value={params.targetPortAreaCm2}
-                        min={15}
-                        max={2500}
-                        decimals={1}
-                        unit="cm²"
-                        onChange={(targetPortAreaCm2) => onChange({ targetPortAreaCm2 })}
+                        value={toDisplayArea(params.targetPortAreaCm2, unitSystem)}
+                        min={toDisplayArea(15, unitSystem)}
+                        max={toDisplayArea(2500, unitSystem)}
+                        decimals={isImp ? 2 : 1}
+                        unit={u.area}
+                        onChange={(val) =>
+                          onChange({ targetPortAreaCm2: fromDisplayArea(val, unitSystem) })
+                        }
                       />
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-len-round"
                           label={en ? 'Port Length (L)' : 'Długość portu (L)'}
-                          valueText={formatDecimal(acoustics.effectivePortLength, 1, lang)}
-                          unit="mm"
+                          valueText={formatDecimal(
+                            toDisplayLen(acoustics.effectivePortLength, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.len}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-round"
                           label={en ? 'Port Displacement' : 'Wyporność portu'}
-                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
-                          unit="L"
+                          valueText={formatDecimal(
+                            toDisplayVol(acoustics.portTotalDisplacementL, unitSystem),
+                            isImp ? 3 : 2,
+                            lang,
+                          )}
+                          unit={u.vol}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-dia-round"
@@ -874,8 +922,12 @@ export function SidebarControls({
                               ? `Diameter per pipe (${params.portCount}×)`
                               : `Średnica 1 rury (${params.portCount}×)`
                           }
-                          valueText={formatDecimal(acoustics.effectivePortDiameter, 1, lang)}
-                          unit="mm"
+                          valueText={formatDecimal(
+                            toDisplayLen(acoustics.effectivePortDiameter, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.len}
                         />
                       </div>
                     </div>
@@ -894,19 +946,23 @@ export function SidebarControls({
                       <ImmediateNumberRow
                         id="port-len-round"
                         label={en ? 'Pipe Length (L)' : 'Długość rury (L)'}
-                        value={params.portLength}
-                        min={40}
-                        max={1600}
-                        decimals={0}
-                        unit="mm"
-                        onChange={(portLength) => onChange({ portLength })}
+                        value={toDisplayLen(params.portLength, unitSystem)}
+                        min={toDisplayLen(40, unitSystem)}
+                        max={toDisplayLen(1600, unitSystem)}
+                        decimals={isImp ? 2 : 0}
+                        unit={u.len}
+                        onChange={(val) => onChange({ portLength: fromDisplayLen(val, unitSystem) })}
                       />
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-area-round"
                           label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
-                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
-                          unit="cm²"
+                          valueText={formatDecimal(
+                            toDisplayArea(acoustics.portAreaCm2, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.area}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-dia-round"
@@ -915,14 +971,22 @@ export function SidebarControls({
                               ? `Diameter per pipe (${params.portCount}×)`
                               : `Średnica 1 rury (${params.portCount}×)`
                           }
-                          valueText={formatDecimal(acoustics.effectivePortDiameter, 1, lang)}
-                          unit="mm"
+                          valueText={formatDecimal(
+                            toDisplayLen(acoustics.effectivePortDiameter, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.len}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-round"
                           label={en ? 'Port Displacement' : 'Wyporność portu'}
-                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
-                          unit="L"
+                          valueText={formatDecimal(
+                            toDisplayVol(acoustics.portTotalDisplacementL, unitSystem),
+                            isImp ? 3 : 2,
+                            lang,
+                          )}
+                          unit={u.vol}
                         />
                       </div>
                     </div>
@@ -931,22 +995,24 @@ export function SidebarControls({
                       <ImmediateNumberRow
                         id="port-dia"
                         label={en ? 'Pipe Inner Diameter' : 'Średnica wewnętrzna rury'}
-                        value={params.portDiameter}
-                        min={35}
-                        max={350}
-                        decimals={0}
-                        unit="mm"
-                        onChange={(portDiameter) => onChange({ portDiameter })}
+                        value={toDisplayLen(params.portDiameter, unitSystem)}
+                        min={toDisplayLen(35, unitSystem)}
+                        max={toDisplayLen(350, unitSystem)}
+                        decimals={isImp ? 2 : 0}
+                        unit={u.len}
+                        onChange={(val) =>
+                          onChange({ portDiameter: fromDisplayLen(val, unitSystem) })
+                        }
                       />
                       <ImmediateNumberRow
                         id="port-len-round"
                         label={en ? 'Pipe Length (L)' : 'Długość rury (L)'}
-                        value={params.portLength}
-                        min={40}
-                        max={1400}
-                        decimals={0}
-                        unit="mm"
-                        onChange={(portLength) => onChange({ portLength })}
+                        value={toDisplayLen(params.portLength, unitSystem)}
+                        min={toDisplayLen(40, unitSystem)}
+                        max={toDisplayLen(1400, unitSystem)}
+                        decimals={isImp ? 2 : 0}
+                        unit={u.len}
+                        onChange={(val) => onChange({ portLength: fromDisplayLen(val, unitSystem) })}
                       />
                       <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-2.5 space-y-1.5">
                         <ReadOnlyComputedField
@@ -960,14 +1026,22 @@ export function SidebarControls({
                         <ReadOnlyComputedField
                           id="auto-area-round"
                           label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
-                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
-                          unit="cm²"
+                          valueText={formatDecimal(
+                            toDisplayArea(acoustics.portAreaCm2, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.area}
                         />
                         <ReadOnlyComputedField
                           id="auto-disp-round"
                           label={en ? 'Port Displacement' : 'Wyporność portu'}
-                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
-                          unit="L"
+                          valueText={formatDecimal(
+                            toDisplayVol(acoustics.portTotalDisplacementL, unitSystem),
+                            isImp ? 3 : 2,
+                            lang,
+                          )}
+                          unit={u.vol}
                         />
                       </div>
                     </>
@@ -999,12 +1073,12 @@ export function SidebarControls({
                             ? 'Pipe Offset (Left / Right)'
                             : 'Pozycja rury (Lewo / Prawo)'
                       }
-                      value={params.portOffsetX}
-                      min={acoustics.offsetBounds.portMinX}
-                      max={acoustics.offsetBounds.portMaxX}
-                      decimals={0}
-                      unit="mm"
-                      onChange={(portOffsetX) => onChange({ portOffsetX })}
+                      value={toDisplayLen(params.portOffsetX, unitSystem)}
+                      min={toDisplayLen(acoustics.offsetBounds.portMinX, unitSystem)}
+                      max={toDisplayLen(acoustics.offsetBounds.portMaxX, unitSystem)}
+                      decimals={isImp ? 2 : 0}
+                      unit={u.len}
+                      onChange={(val) => onChange({ portOffsetX: fromDisplayLen(val, unitSystem) })}
                     />
                     <ImmediateNumberRow
                       id="port-offset-y"
@@ -1017,12 +1091,12 @@ export function SidebarControls({
                             ? 'Pipe Offset (Bottom / Top)'
                             : 'Pozycja rury (Dół / Góra)'
                       }
-                      value={params.portOffsetY}
-                      min={acoustics.offsetBounds.portMinY}
-                      max={acoustics.offsetBounds.portMaxY}
-                      decimals={0}
-                      unit="mm"
-                      onChange={(portOffsetY) => onChange({ portOffsetY })}
+                      value={toDisplayLen(params.portOffsetY, unitSystem)}
+                      min={toDisplayLen(acoustics.offsetBounds.portMinY, unitSystem)}
+                      max={toDisplayLen(acoustics.offsetBounds.portMaxY, unitSystem)}
+                      decimals={isImp ? 2 : 0}
+                      unit={u.len}
+                      onChange={(val) => onChange({ portOffsetY: fromDisplayLen(val, unitSystem) })}
                     />
                   </div>
                   <div className="flex items-center justify-between pt-1">
@@ -1101,11 +1175,11 @@ export function SidebarControls({
                     <label htmlFor="port-full-height" className="text-xs text-zinc-300 cursor-pointer">
                       {!isBandpass && params.portSlotSide === 'bottom'
                         ? en
-                          ? `Full Internal Width (${Math.round(acoustics.internalWidth)} mm)`
-                          : `Pełna szerokość wewnętrzna (${Math.round(acoustics.internalWidth)} mm)`
+                          ? `Full Internal Width (${formatLen(acoustics.internalWidth, unitSystem, 0, 2)})`
+                          : `Pełna szerokość wewnętrzna (${formatLen(acoustics.internalWidth, unitSystem, 0, 2)})`
                         : en
-                          ? `Full Internal Height (${Math.round(acoustics.internalHeight)} mm)`
-                          : `Pełna wysokość wewnętrzna (${Math.round(acoustics.internalHeight)} mm)`}
+                          ? `Full Internal Height (${formatLen(acoustics.internalHeight, unitSystem, 0, 2)})`
+                          : `Pełna wysokość wewnętrzna (${formatLen(acoustics.internalHeight, unitSystem, 0, 2)})`}
                     </label>
                     <input
                       id="port-full-height"
@@ -1127,16 +1201,17 @@ export function SidebarControls({
                             ? 'Slot Height (Hp)'
                             : 'Wysokość szczeliny (Hp)'
                       }
-                      value={params.portHeight}
-                      min={30}
-                      max={
+                      value={toDisplayLen(params.portHeight, unitSystem)}
+                      min={toDisplayLen(30, unitSystem)}
+                      max={toDisplayLen(
                         !isBandpass && params.portSlotSide === 'bottom'
                           ? Math.round(acoustics.internalWidth)
-                          : Math.round(acoustics.internalHeight)
-                      }
-                      decimals={0}
-                      unit="mm"
-                      onChange={(portHeight) => onChange({ portHeight })}
+                          : Math.round(acoustics.internalHeight),
+                        unitSystem,
+                      )}
+                      decimals={isImp ? 2 : 0}
+                      unit={u.len}
+                      onChange={(val) => onChange({ portHeight: fromDisplayLen(val, unitSystem) })}
                     />
                   )}
 
@@ -1155,25 +1230,35 @@ export function SidebarControls({
                       <ImmediateNumberRow
                         id="target-area-slot"
                         label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
-                        value={params.targetPortAreaCm2}
-                        min={15}
-                        max={2500}
-                        decimals={1}
-                        unit="cm²"
-                        onChange={(targetPortAreaCm2) => onChange({ targetPortAreaCm2 })}
+                        value={toDisplayArea(params.targetPortAreaCm2, unitSystem)}
+                        min={toDisplayArea(15, unitSystem)}
+                        max={toDisplayArea(2500, unitSystem)}
+                        decimals={isImp ? 2 : 1}
+                        unit={u.area}
+                        onChange={(val) =>
+                          onChange({ targetPortAreaCm2: fromDisplayArea(val, unitSystem) })
+                        }
                       />
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-len-slot"
                           label={en ? 'Port Length' : 'Długość portu'}
-                          valueText={formatDecimal(acoustics.effectivePortLength, 1, lang)}
-                          unit="mm"
+                          valueText={formatDecimal(
+                            toDisplayLen(acoustics.effectivePortLength, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.len}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-slot"
                           label={en ? 'Port Displacement' : 'Wyporność portu'}
-                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
-                          unit="L"
+                          valueText={formatDecimal(
+                            toDisplayVol(acoustics.portTotalDisplacementL, unitSystem),
+                            isImp ? 3 : 2,
+                            lang,
+                          )}
+                          unit={u.vol}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-width-slot"
@@ -1186,8 +1271,12 @@ export function SidebarControls({
                                 ? 'Slot Width (Wp)'
                                 : 'Szerokość szczeliny (Wp)'
                           }
-                          valueText={formatDecimal(acoustics.effectivePortWidth, 1, lang)}
-                          unit="mm"
+                          valueText={formatDecimal(
+                            toDisplayLen(acoustics.effectivePortWidth, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.len}
                         />
                       </div>
                     </div>
@@ -1206,19 +1295,23 @@ export function SidebarControls({
                       <ImmediateNumberRow
                         id="port-len-slot"
                         label={en ? 'Effective Tunnel Length (L)' : 'Długość efektywna tunelu (L)'}
-                        value={params.portLength}
-                        min={50}
-                        max={2200}
-                        decimals={0}
-                        unit="mm"
-                        onChange={(portLength) => onChange({ portLength })}
+                        value={toDisplayLen(params.portLength, unitSystem)}
+                        min={toDisplayLen(50, unitSystem)}
+                        max={toDisplayLen(2200, unitSystem)}
+                        decimals={isImp ? 2 : 0}
+                        unit={u.len}
+                        onChange={(val) => onChange({ portLength: fromDisplayLen(val, unitSystem) })}
                       />
                       <div className="pt-2 border-t border-white/[0.08] space-y-2">
                         <ReadOnlyComputedField
                           id="auto-port-area-slot"
                           label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
-                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
-                          unit="cm²"
+                          valueText={formatDecimal(
+                            toDisplayArea(acoustics.portAreaCm2, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.area}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-width-slot"
@@ -1231,14 +1324,22 @@ export function SidebarControls({
                                 ? 'Slot Width (Wp)'
                                 : 'Szerokość szczeliny (Wp)'
                           }
-                          valueText={formatDecimal(acoustics.effectivePortWidth, 1, lang)}
-                          unit="mm"
+                          valueText={formatDecimal(
+                            toDisplayLen(acoustics.effectivePortWidth, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.len}
                         />
                         <ReadOnlyComputedField
                           id="auto-port-disp-slot"
                           label={en ? 'Port Displacement' : 'Wyporność portu'}
-                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
-                          unit="L"
+                          valueText={formatDecimal(
+                            toDisplayVol(acoustics.portTotalDisplacementL, unitSystem),
+                            isImp ? 3 : 2,
+                            lang,
+                          )}
+                          unit={u.vol}
                         />
                       </div>
                     </div>
@@ -1255,22 +1356,22 @@ export function SidebarControls({
                               ? 'Slot Width (Wp)'
                               : 'Szerokość szczeliny (Wp)'
                         }
-                        value={params.portWidth}
-                        min={16}
-                        max={240}
-                        decimals={0}
-                        unit="mm"
-                        onChange={(portWidth) => onChange({ portWidth })}
+                        value={toDisplayLen(params.portWidth, unitSystem)}
+                        min={toDisplayLen(16, unitSystem)}
+                        max={toDisplayLen(240, unitSystem)}
+                        decimals={isImp ? 2 : 0}
+                        unit={u.len}
+                        onChange={(val) => onChange({ portWidth: fromDisplayLen(val, unitSystem) })}
                       />
                       <ImmediateNumberRow
                         id="port-len-slot"
                         label={en ? 'Effective Tunnel Length (L)' : 'Długość efektywna tunelu (L)'}
-                        value={params.portLength}
-                        min={50}
-                        max={2000}
-                        decimals={0}
-                        unit="mm"
-                        onChange={(portLength) => onChange({ portLength })}
+                        value={toDisplayLen(params.portLength, unitSystem)}
+                        min={toDisplayLen(50, unitSystem)}
+                        max={toDisplayLen(2000, unitSystem)}
+                        decimals={isImp ? 2 : 0}
+                        unit={u.len}
+                        onChange={(val) => onChange({ portLength: fromDisplayLen(val, unitSystem) })}
                       />
                       <div className="bg-[#08090C] border border-white/[0.08] rounded-md p-2.5 space-y-1.5">
                         <ReadOnlyComputedField
@@ -1284,14 +1385,22 @@ export function SidebarControls({
                         <ReadOnlyComputedField
                           id="auto-area-slot"
                           label={en ? 'Port Cross-Section Area' : 'Pole przekroju portu'}
-                          valueText={formatDecimal(acoustics.portAreaCm2, 1, lang)}
-                          unit="cm²"
+                          valueText={formatDecimal(
+                            toDisplayArea(acoustics.portAreaCm2, unitSystem),
+                            isImp ? 2 : 1,
+                            lang,
+                          )}
+                          unit={u.area}
                         />
                         <ReadOnlyComputedField
                           id="auto-disp-slot"
                           label={en ? 'Port Displacement' : 'Wyporność portu'}
-                          valueText={formatDecimal(acoustics.portTotalDisplacementL, 2, lang)}
-                          unit="L"
+                          valueText={formatDecimal(
+                            toDisplayVol(acoustics.portTotalDisplacementL, unitSystem),
+                            isImp ? 3 : 2,
+                            lang,
+                          )}
+                          unit={u.vol}
                         />
                       </div>
                     </>
@@ -1321,12 +1430,14 @@ export function SidebarControls({
                         <ImmediateNumberRow
                           id="rear-port-height"
                           label={en ? 'Rear Port Height' : 'Wysokość portu tylnego'}
-                          value={params.portRearHeight}
-                          min={30}
-                          max={Math.round(acoustics.internalHeight)}
-                          decimals={0}
-                          unit="mm"
-                          onChange={(portRearHeight) => onChange({ portRearHeight })}
+                          value={toDisplayLen(params.portRearHeight, unitSystem)}
+                          min={toDisplayLen(30, unitSystem)}
+                          max={toDisplayLen(Math.round(acoustics.internalHeight), unitSystem)}
+                          decimals={isImp ? 2 : 0}
+                          unit={u.len}
+                          onChange={(val) =>
+                            onChange({ portRearHeight: fromDisplayLen(val, unitSystem) })
+                          }
                         />
                       )}
                       {params.portControlMode === 'tuning' ? (
@@ -1344,24 +1455,34 @@ export function SidebarControls({
                           <ImmediateNumberRow
                             id="rear-target-area"
                             label={en ? 'Rear Port Area' : 'Pole portu tylnego'}
-                            value={params.targetRearPortAreaCm2}
-                            min={15}
-                            max={1500}
-                            decimals={1}
-                            unit="cm²"
-                            onChange={(targetRearPortAreaCm2) => onChange({ targetRearPortAreaCm2 })}
+                            value={toDisplayArea(params.targetRearPortAreaCm2, unitSystem)}
+                            min={toDisplayArea(15, unitSystem)}
+                            max={toDisplayArea(1500, unitSystem)}
+                            decimals={isImp ? 2 : 1}
+                            unit={u.area}
+                            onChange={(val) =>
+                              onChange({ targetRearPortAreaCm2: fromDisplayArea(val, unitSystem) })
+                            }
                           />
                           <ReadOnlyComputedField
                             id="rear-auto-len"
                             label={en ? 'Rear Port Length' : 'Długość portu tylnego'}
-                            valueText={formatDecimal(acoustics.effectiveRearPortLength, 1, lang)}
-                            unit="mm"
+                            valueText={formatDecimal(
+                              toDisplayLen(acoustics.effectiveRearPortLength, unitSystem),
+                              isImp ? 2 : 1,
+                              lang,
+                            )}
+                            unit={u.len}
                           />
                           <ReadOnlyComputedField
                             id="rear-auto-width"
                             label={en ? 'Rear Port Width' : 'Szerokość portu tylnego'}
-                            valueText={formatDecimal(acoustics.effectiveRearPortWidth, 1, lang)}
-                            unit="mm"
+                            valueText={formatDecimal(
+                              toDisplayLen(acoustics.effectiveRearPortWidth, unitSystem),
+                              isImp ? 2 : 1,
+                              lang,
+                            )}
+                            unit={u.len}
                           />
                         </div>
                       ) : params.portControlMode === 'area_from_length' ? (
@@ -1379,18 +1500,24 @@ export function SidebarControls({
                           <ImmediateNumberRow
                             id="rear-port-len"
                             label={en ? 'Rear Port Length' : 'Długość portu tylnego'}
-                            value={params.portRearLength}
-                            min={60}
-                            max={2000}
-                            decimals={0}
-                            unit="mm"
-                            onChange={(portRearLength) => onChange({ portRearLength })}
+                            value={toDisplayLen(params.portRearLength, unitSystem)}
+                            min={toDisplayLen(60, unitSystem)}
+                            max={toDisplayLen(2000, unitSystem)}
+                            decimals={isImp ? 2 : 0}
+                            unit={u.len}
+                            onChange={(val) =>
+                              onChange({ portRearLength: fromDisplayLen(val, unitSystem) })
+                            }
                           />
                           <ReadOnlyComputedField
                             id="rear-auto-area"
                             label={en ? 'Rear Port Area' : 'Pole portu tylnego'}
-                            valueText={formatDecimal(acoustics.rearPortAreaCm2, 1, lang)}
-                            unit="cm²"
+                            valueText={formatDecimal(
+                              toDisplayArea(acoustics.rearPortAreaCm2, unitSystem),
+                              isImp ? 2 : 1,
+                              lang,
+                            )}
+                            unit={u.area}
                           />
                         </div>
                       ) : (
@@ -1398,22 +1525,26 @@ export function SidebarControls({
                           <ImmediateNumberRow
                             id="rear-port-width"
                             label={en ? 'Rear Port Width' : 'Szerokość portu tylnego'}
-                            value={params.portRearWidth}
-                            min={16}
-                            max={200}
-                            decimals={0}
-                            unit="mm"
-                            onChange={(portRearWidth) => onChange({ portRearWidth })}
+                            value={toDisplayLen(params.portRearWidth, unitSystem)}
+                            min={toDisplayLen(16, unitSystem)}
+                            max={toDisplayLen(200, unitSystem)}
+                            decimals={isImp ? 2 : 0}
+                            unit={u.len}
+                            onChange={(val) =>
+                              onChange({ portRearWidth: fromDisplayLen(val, unitSystem) })
+                            }
                           />
                           <ImmediateNumberRow
                             id="rear-port-len"
                             label={en ? 'Rear Port Length' : 'Długość portu tylnego'}
-                            value={params.portRearLength}
-                            min={60}
-                            max={2000}
-                            decimals={0}
-                            unit="mm"
-                            onChange={(portRearLength) => onChange({ portRearLength })}
+                            value={toDisplayLen(params.portRearLength, unitSystem)}
+                            min={toDisplayLen(60, unitSystem)}
+                            max={toDisplayLen(2000, unitSystem)}
+                            decimals={isImp ? 2 : 0}
+                            unit={u.len}
+                            onChange={(val) =>
+                              onChange({ portRearLength: fromDisplayLen(val, unitSystem) })
+                            }
                           />
                         </>
                       )}
@@ -1428,8 +1559,8 @@ export function SidebarControls({
                         </span>
                         <span className="text-red-400">
                           {acoustics.slotPort.isBent
-                            ? `${en ? 'L-Bent' : 'Zagięty L'} (${Math.round(acoustics.slotPort.baffle1Length)}+${Math.round(acoustics.slotPort.baffle2Length)} mm)`
-                            : `${en ? 'Straight' : 'Prosty'} (${Math.round(acoustics.slotPort.baffle1Length)} mm)`}
+                            ? `${en ? 'L-Bent' : 'Zagięty L'} (${formatLenNum(acoustics.slotPort.baffle1Length, unitSystem, 0, 2)}+${formatLenNum(acoustics.slotPort.baffle2Length, unitSystem, 0, 2)} ${u.len})`
+                            : `${en ? 'Straight' : 'Prosty'} (${formatLen(acoustics.slotPort.baffle1Length, unitSystem, 0, 2)})`}
                         </span>
                       </div>
                       {params.enclosureType === 'bandpass_6th' && acoustics.rearSlotPort && (
@@ -1439,8 +1570,8 @@ export function SidebarControls({
                           </span>
                           <span className="text-cyan-300">
                             {acoustics.rearSlotPort.isBent
-                              ? `${en ? 'L-Bent' : 'Zagięty L'} (${Math.round(acoustics.rearSlotPort.baffle1Length)}+${Math.round(acoustics.rearSlotPort.baffle2Length)} mm)`
-                              : `${en ? 'Straight' : 'Prosty'} (${Math.round(acoustics.rearSlotPort.baffle1Length)} mm)`}
+                              ? `${en ? 'L-Bent' : 'Zagięty L'} (${formatLenNum(acoustics.rearSlotPort.baffle1Length, unitSystem, 0, 2)}+${formatLenNum(acoustics.rearSlotPort.baffle2Length, unitSystem, 0, 2)} ${u.len})`
+                              : `${en ? 'Straight' : 'Prosty'} (${formatLen(acoustics.rearSlotPort.baffle1Length, unitSystem, 0, 2)})`}
                           </span>
                         </div>
                       )}
@@ -1744,13 +1875,26 @@ export function SidebarControls({
                   {[
                     { label: 'Fs', val: `${liveDriverPreview.fs.toFixed(1)} Hz` },
                     { label: 'Qts', val: liveDriverPreview.qts.toFixed(3) },
-                    { label: 'Vas', val: `${liveDriverPreview.vas.toFixed(1)} L` },
+                    {
+                      label: 'Vas',
+                      val: `${formatVolNum(liveDriverPreview.vas, unitSystem, 1, 2)} ${u.vol}`,
+                    },
                     { label: 'EBP', val: `${liveDriverPreview.ebpHz.toFixed(0)} Hz` },
                     { label: 'SPL 1W', val: `${liveDriverPreview.spl1w1m.toFixed(1)} dB` },
                     { label: '2.83V', val: `${liveDriverPreview.spl283v1m.toFixed(1)} dB` },
                     { label: 'Bl', val: `${liveDriverPreview.bl.toFixed(1)} Tm` },
-                    { label: 'Mms', val: `${Math.round(liveDriverPreview.mms)} g` },
-                    { label: en ? 'Vd total' : 'Vd łącz.', val: `${Math.round(liveDriverPreview.vdCm3)} cm³` },
+                    {
+                      label: 'Mms',
+                      val: isImp
+                        ? `${toDisplayMassG(liveDriverPreview.mms, unitSystem).toFixed(2)} ${u.mass}`
+                        : `${Math.round(liveDriverPreview.mms)} ${u.mass}`,
+                    },
+                    {
+                      label: en ? 'Vd total' : 'Vd łącz.',
+                      val: isImp
+                        ? `${toDisplaySmallVol(liveDriverPreview.vdCm3, unitSystem).toFixed(1)} ${u.smallVol}`
+                        : `${Math.round(liveDriverPreview.vdCm3)} ${u.smallVol}`,
+                    },
                   ].map((item) => (
                     <div
                       key={item.label}
@@ -1894,12 +2038,12 @@ export function SidebarControls({
                         ? 'Offset (Left / Right)'
                         : 'Przesunięcie (Lewo / Prawo)'
                   }
-                  value={params.driverOffsetX}
-                  min={acoustics.offsetBounds.driverMinX}
-                  max={acoustics.offsetBounds.driverMaxX}
-                  decimals={0}
-                  unit="mm"
-                  onChange={(driverOffsetX) => onChange({ driverOffsetX })}
+                  value={toDisplayLen(params.driverOffsetX, unitSystem)}
+                  min={toDisplayLen(acoustics.offsetBounds.driverMinX, unitSystem)}
+                  max={toDisplayLen(acoustics.offsetBounds.driverMaxX, unitSystem)}
+                  decimals={isImp ? 2 : 0}
+                  unit={u.len}
+                  onChange={(val) => onChange({ driverOffsetX: fromDisplayLen(val, unitSystem) })}
                 />
                 <ImmediateNumberRow
                   id="drv-offset-y"
@@ -1912,59 +2056,62 @@ export function SidebarControls({
                         ? 'Offset (Bottom / Top)'
                         : 'Przesunięcie (Dół / Góra)'
                   }
-                  value={params.driverOffsetY}
-                  min={acoustics.offsetBounds.driverMinY}
-                  max={acoustics.offsetBounds.driverMaxY}
-                  decimals={0}
-                  unit="mm"
-                  onChange={(driverOffsetY) => onChange({ driverOffsetY })}
+                  value={toDisplayLen(params.driverOffsetY, unitSystem)}
+                  min={toDisplayLen(acoustics.offsetBounds.driverMinY, unitSystem)}
+                  max={toDisplayLen(acoustics.offsetBounds.driverMaxY, unitSystem)}
+                  decimals={isImp ? 2 : 0}
+                  unit={u.len}
+                  onChange={(val) => onChange({ driverOffsetY: fromDisplayLen(val, unitSystem) })}
                 />
               </div>
 
               <ImmediateNumberRow
                 id="drv-cutout"
                 label={en ? 'Cutout Diameter' : 'Średnica otworu montażowego'}
-                value={params.driverCutoutDia}
-                min={80}
-                max={520}
-                decimals={0}
-                unit="mm"
-                onChange={(driverCutoutDia) =>
+                value={toDisplayLen(params.driverCutoutDia, unitSystem)}
+                min={toDisplayLen(80, unitSystem)}
+                max={toDisplayLen(520, unitSystem)}
+                decimals={isImp ? 2 : 0}
+                unit={u.len}
+                onChange={(val) => {
+                  const driverCutoutDia = fromDisplayLen(val, unitSystem);
                   onChange({
                     driverCutoutDia,
                     driverOuterDia: Math.max(driverCutoutDia + 20, params.driverOuterDia),
-                  })
-                }
+                  });
+                }}
               />
               <ImmediateNumberRow
                 id="drv-outer"
                 label={en ? 'Outer Frame Diameter' : 'Średnica zewnętrzna kosza'}
-                value={params.driverOuterDia}
-                min={100}
-                max={580}
-                decimals={0}
-                unit="mm"
-                onChange={(driverOuterDia) => onChange({ driverOuterDia })}
+                value={toDisplayLen(params.driverOuterDia, unitSystem)}
+                min={toDisplayLen(100, unitSystem)}
+                max={toDisplayLen(580, unitSystem)}
+                decimals={isImp ? 2 : 0}
+                unit={u.len}
+                onChange={(val) => onChange({ driverOuterDia: fromDisplayLen(val, unitSystem) })}
               />
               <ImmediateNumberRow
                 id="drv-depth"
                 label={en ? 'Mounting Depth' : 'Głębokość montażowa'}
-                value={params.driverDepth}
-                min={40}
-                max={420}
-                decimals={0}
-                unit="mm"
-                onChange={(driverDepth) => onChange({ driverDepth })}
+                value={toDisplayLen(params.driverDepth, unitSystem)}
+                min={toDisplayLen(40, unitSystem)}
+                max={toDisplayLen(420, unitSystem)}
+                decimals={isImp ? 2 : 0}
+                unit={u.len}
+                onChange={(val) => onChange({ driverDepth: fromDisplayLen(val, unitSystem) })}
               />
               <ImmediateNumberRow
                 id="drv-disp"
                 label={en ? 'Driver Displacement (1 pc)' : 'Wyporność głośnika (1 szt.)'}
-                value={params.driverDisplacement}
-                min={0.2}
-                max={25}
-                decimals={2}
-                unit="L"
-                onChange={(driverDisplacement) => onChange({ driverDisplacement })}
+                value={toDisplayVol(params.driverDisplacement, unitSystem)}
+                min={toDisplayVol(0.2, unitSystem)}
+                max={toDisplayVol(25, unitSystem)}
+                decimals={isImp ? 3 : 2}
+                unit={u.vol}
+                onChange={(val) =>
+                  onChange({ driverDisplacement: fromDisplayVol(val, unitSystem) })
+                }
               />
 
               <div className="grid grid-cols-2 gap-3 pt-1">
@@ -1998,30 +2145,30 @@ export function SidebarControls({
                 </div>
                 <div>
                   <label htmlFor="drv-vas" className="block text-[11px] text-zinc-400 mb-1">
-                    {en ? 'Volume Vas (L)' : 'Objętość Vas (L)'}
+                    {en ? `Volume Vas (${u.vol})` : `Objętość Vas (${u.vol})`}
                   </label>
                   <ImmediateNumberInput
                     id="drv-vas"
-                    value={params.driverVas}
-                    min={1}
-                    max={1000}
-                    decimals={2}
-                    onChange={(driverVas) => onChange({ driverVas })}
+                    value={toDisplayVol(params.driverVas, unitSystem)}
+                    min={toDisplayVol(1, unitSystem)}
+                    max={toDisplayVol(1000, unitSystem)}
+                    decimals={isImp ? 3 : 2}
+                    onChange={(val) => onChange({ driverVas: fromDisplayVol(val, unitSystem) })}
                     className="w-full bg-[#08090C] border border-white/[0.12] rounded px-2.5 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                   />
                 </div>
                 <div>
                   <label htmlFor="drv-xmax" className="block text-[11px] text-zinc-400 mb-1">
-                    Xmax (mm) · RMS (W)
+                    Xmax ({u.len}) · RMS (W)
                   </label>
                   <div className="flex gap-1.5">
                     <ImmediateNumberInput
                       id="drv-xmax"
-                      value={params.driverXmax}
-                      min={1}
-                      max={80}
-                      decimals={1}
-                      onChange={(driverXmax) => onChange({ driverXmax })}
+                      value={toDisplayLen(params.driverXmax, unitSystem)}
+                      min={toDisplayLen(1, unitSystem)}
+                      max={toDisplayLen(80, unitSystem)}
+                      decimals={isImp ? 2 : 1}
+                      onChange={(val) => onChange({ driverXmax: fromDisplayLen(val, unitSystem) })}
                       className="w-1/2 bg-[#08090C] border border-white/[0.12] rounded px-2 py-1.5 font-mono-num text-xs text-white focus:outline-none focus:border-red-500"
                     />
                     <ImmediateNumberInput
@@ -2048,7 +2195,9 @@ export function SidebarControls({
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>
               {en ? 'Geometry valid · Magnet clearance: ' : 'Geometria poprawna · Luz za magnesem: '}
-              <strong className="font-mono-num">{acoustics.driverClearanceMm} mm</strong>
+              <strong className="font-mono-num">
+                {formatLen(acoustics.driverClearanceMm, unitSystem, 0, 2)}
+              </strong>
             </span>
           </div>
         ) : (

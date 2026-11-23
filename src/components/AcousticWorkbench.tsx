@@ -50,8 +50,30 @@ import type {
   CoilWiringMode,
   DriverPreset,
   EnclosureType,
+  UnitSystem,
   VoiceCoilCount,
 } from '../engine/types';
+import {
+  formatArea,
+  formatLen,
+  formatVel,
+  formatVol,
+  fromDisplayAirDensity,
+  fromDisplayArea,
+  fromDisplayLen,
+  fromDisplayMassG,
+  fromDisplayVel,
+  fromDisplayVol,
+  getUnitLabels,
+  toDisplayAirDensity,
+  toDisplayArea,
+  toDisplayLen,
+  toDisplayMassG,
+  toDisplaySmallVol,
+  toDisplayVel,
+  toDisplayVol,
+  type UnitLabels,
+} from '../engine/units';
 import { useI18n } from '../i18n';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
@@ -233,6 +255,43 @@ function getPointValue(pt: SimCurvePoint, mode: WorkbenchPlotMode): number {
   }
 }
 
+function getDisplayPointValue(
+  pt: SimCurvePoint,
+  mode: WorkbenchPlotMode,
+  unitSystem: UnitSystem,
+): number {
+  const raw = getPointValue(pt, mode);
+  if (mode === 'excursion') return toDisplayLen(raw, unitSystem);
+  if (mode === 'velocity' || mode === 'rearPortVelocity') return toDisplayVel(raw, unitSystem);
+  return raw;
+}
+
+function getPlotModeDisplay(
+  mode: (typeof PLOT_MODES)[number],
+  en: boolean,
+  u: UnitLabels,
+): { label: string; unit: string } {
+  if (mode.id === 'excursion') {
+    return {
+      label: en ? `Cone Excursion (${u.len})` : `Wychył membrany (${u.len})`,
+      unit: u.len,
+    };
+  }
+  if (mode.id === 'velocity') {
+    return {
+      label: en ? `Front Port Velocity (${u.vel})` : `Port przedni — prędkość (${u.vel})`,
+      unit: u.vel,
+    };
+  }
+  if (mode.id === 'rearPortVelocity') {
+    return {
+      label: en ? `BP6 Rear Port Velocity (${u.vel})` : `Port tylny BP6 — prędkość (${u.vel})`,
+      unit: u.vel,
+    };
+  }
+  return { label: en ? mode.labelEn : mode.labelPl, unit: mode.unit };
+}
+
 function loadSavedVariants(
   params: BoxParams,
   knownDrivers: DriverPreset[],
@@ -328,8 +387,10 @@ export function AcousticWorkbench({
   onOpenDriverModal,
   onImportDrivers,
 }: AcousticWorkbenchProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const en = lang === 'en';
+  const u = getUnitLabels(unitSystem);
+  const isImp = unitSystem === 'imperial';
   const [plotMode, setPlotMode] = useState<WorkbenchPlotMode>('transfer');
   const [maxFreqHz, setMaxFreqHz] = useState<200 | 500>(200);
   const [activeProjectTab, setActiveProjectTab] = useState<ProjectEditorTab>('driver');
@@ -997,7 +1058,7 @@ export function AcousticWorkbench({
             : en
               ? `Imported ${successes.length} WinISD drivers (.wdr)`
               : `Zaimportowano ${successes.length} głośników WinISD (.wdr)`,
-        details: `${unitLabel} · Fs ${first.driver.fs} Hz · Qts ${first.driver.qts.toFixed(3)} · Vas ${first.driver.vas} L · Xmax ${first.driver.xmax} mm · ${first.driver.powerW} W RMS`,
+        details: `${unitLabel} · Fs ${first.driver.fs} Hz · Qts ${first.driver.qts.toFixed(3)} · Vas ${formatVol(first.driver.vas, unitSystem, 1, 2)} · Xmax ${formatLen(first.driver.xmax, unitSystem, 1, 2)} · ${first.driver.powerW} W RMS`,
         warnings: [...first.warnings, ...errors],
         primaryDriver: first.driver,
       });
@@ -1109,18 +1170,38 @@ export function AcousticWorkbench({
       return { yMin: 0, yMax: top, yTicks: [0, step, step * 2, step * 3, top] };
     }
     if (plotMode === 'excursion') {
-      const maxXmax = Math.max(
-        params.driverXmax,
-        ...seriesList.map((s) => s.effectiveXmaxMm),
+      const maxXmax = toDisplayLen(
+        Math.max(params.driverXmax, ...seriesList.map((s) => s.effectiveXmaxMm)),
+        unitSystem,
       );
-      const peak = allPts.length ? Math.max(...allPts.map((p) => p.excursionMm)) : maxXmax;
+      const peak = allPts.length
+        ? Math.max(...allPts.map((p) => getDisplayPointValue(p, 'excursion', unitSystem)))
+        : maxXmax;
+      if (isImp) {
+        const top = Math.max(
+          Number((maxXmax * 1.4).toFixed(2)),
+          Number((peak * 1.1).toFixed(2)),
+          0.5,
+        );
+        const mid = Number(maxXmax.toFixed(2));
+        return {
+          yMin: 0,
+          yMax: top,
+          yTicks: [0, Number((mid * 0.5).toFixed(2)), mid, top],
+        };
+      }
       const top = Math.max(Math.ceil(maxXmax * 1.4), Math.ceil(peak * 1.1));
       const mid = Math.round(maxXmax);
       return { yMin: 0, yMax: top, yTicks: [0, Math.round(mid * 0.5), mid, top] };
     }
     if (plotMode === 'velocity' || plotMode === 'rearPortVelocity') {
-      const vals = allPts.map((p) => getPointValue(p, plotMode));
-      const peak = vals.length ? Math.max(...vals) : 25;
+      const vals = allPts.map((p) => getDisplayPointValue(p, plotMode, unitSystem));
+      const danger = toDisplayVel(25, unitSystem);
+      const peak = vals.length ? Math.max(...vals) : danger;
+      if (isImp) {
+        const top = Math.max(115, Math.ceil((peak + 15) / 10) * 10);
+        return { yMin: 0, yMax: top, yTicks: [0, 30, 55.8, 82, top] };
+      }
       const top = Math.max(35, Math.ceil((peak + 5) / 5) * 5);
       return { yMin: 0, yMax: top, yTicks: [0, 10, 17, 25, top] };
     }
@@ -1144,7 +1225,7 @@ export function AcousticWorkbench({
     const top = Math.max(16, Math.ceil((peak + 2) / 4) * 4);
     const step = Math.max(4, Math.round(top / 4));
     return { yMin: 0, yMax: top, yTicks: [0, step, step * 2, step * 3, top] };
-  }, [seriesList, plotMode, signal.environment, signal.cabinGain, signal.peqEnabled, signal.ltEnabled, params.driverXmax]);
+  }, [seriesList, plotMode, signal.environment, signal.cabinGain, signal.peqEnabled, signal.ltEnabled, params.driverXmax, unitSystem, isImp]);
 
   const yForVal = (val: number) => {
     const clamped = Math.max(yMin, Math.min(yMax, val));
@@ -1161,7 +1242,7 @@ export function AcousticWorkbench({
       ? [10, 15, 20, 30, 50, 80, 100, 150, 200, 300, 500]
       : [10, 15, 20, 30, 40, 50, 60, 80, 100, 150, 200];
   const currentModeInfo = PLOT_MODES.find((m) => m.id === plotMode) ?? PLOT_MODES[0];
-  const currentUnit = currentModeInfo.unit;
+  const currentUnit = getPlotModeDisplay(currentModeInfo, en, u).unit;
   const refSeries = seriesList[0];
 
   const activePortIsRound =
@@ -1459,7 +1540,8 @@ export function AcousticWorkbench({
                           <span className="truncate">{v.name}</span>
                         </div>
                         <div className="text-[10px] text-zinc-400 font-mono-num truncate">
-                          {v.driverCount ?? params.driverCount}× · {v.netVolumeL.toFixed(1)} L
+                          {v.driverCount ?? params.driverCount}× ·{' '}
+                          {formatVol(v.netVolumeL, unitSystem, 1, 2)}
                           {v.enclosureType !== 'sealed'
                             ? ` · ${v.tuningHz.toFixed(1)} Hz`
                             : en
@@ -1626,7 +1708,7 @@ export function AcousticWorkbench({
                   <optgroup key={grp} label={grp}>
                     {PLOT_MODES.filter((m) => (en ? m.groupEn : m.groupPl) === grp).map((m) => (
                       <option key={m.id} value={m.id}>
-                        {en ? m.labelEn : m.labelPl}
+                        {getPlotModeDisplay(m, en, u).label}
                       </option>
                     ))}
                   </optgroup>
@@ -1660,7 +1742,7 @@ export function AcousticWorkbench({
                     : 'bg-[#08090C] text-zinc-300 hover:text-white border border-white/[0.06]'
                 }`}
               >
-                {en ? m.labelEn : m.labelPl}
+                {getPlotModeDisplay(m, en, u).label}
               </button>
             ))}
           </div>
@@ -1701,10 +1783,15 @@ export function AcousticWorkbench({
             {yTicks.map((val) => {
               const y = yForVal(val);
               const isMachSafe =
-                (plotMode === 'velocity' || plotMode === 'rearPortVelocity') && val === 17;
+                (plotMode === 'velocity' || plotMode === 'rearPortVelocity') &&
+                Math.abs(val - (isImp ? 55.8 : 17)) < 0.05;
+              const xmaxTickVal = isImp
+                ? Number(toDisplayLen(params.driverXmax, unitSystem).toFixed(2))
+                : Math.round(params.driverXmax);
               const isDanger =
-                ((plotMode === 'velocity' || plotMode === 'rearPortVelocity') && val === 25) ||
-                (plotMode === 'excursion' && val === Math.round(params.driverXmax));
+                ((plotMode === 'velocity' || plotMode === 'rearPortVelocity') &&
+                  Math.abs(val - (isImp ? 82 : 25)) < 0.05) ||
+                (plotMode === 'excursion' && Math.abs(val - xmaxTickVal) < 0.02);
               const isRef =
                 isMachSafe ||
                 isDanger ||
@@ -1714,6 +1801,12 @@ export function AcousticWorkbench({
                   plotMode === 'phaseBox' ||
                   plotMode === 'impedancePhase') &&
                   val === 0);
+              const tickStr =
+                isImp && plotMode === 'excursion'
+                  ? val.toFixed(2)
+                  : isImp && (plotMode === 'velocity' || plotMode === 'rearPortVelocity')
+                    ? val.toFixed(1)
+                    : String(val);
               return (
                 <g key={val}>
                   <line
@@ -1741,7 +1834,7 @@ export function AcousticWorkbench({
                     fontSize="10"
                     fontFamily="JetBrains Mono, monospace"
                   >
-                    {val} {currentUnit}
+                    {tickStr} {currentUnit}
                   </text>
                 </g>
               );
@@ -1766,37 +1859,40 @@ export function AcousticWorkbench({
             {plotMode === 'excursion' && (
               <text
                 x={padL + 8}
-                y={Math.max(padT + 14, yForVal(params.driverXmax) - 6)}
+                y={Math.max(
+                  padT + 14,
+                  yForVal(toDisplayLen(params.driverXmax, unitSystem)) - 6,
+                )}
                 fill="#fbbf24"
                 fontSize="11"
                 fontFamily="JetBrains Mono, monospace"
               >
                 {en
-                  ? `Mechanical Xmax Limit (${params.driverXmax} mm)`
-                  : `Limit mechaniczny Xmax (${params.driverXmax} mm)`}
+                  ? `Mechanical Xmax Limit (${formatLen(params.driverXmax, unitSystem, 1, 2)})`
+                  : `Limit mechaniczny Xmax (${formatLen(params.driverXmax, unitSystem, 1, 2)})`}
               </text>
             )}
             {(plotMode === 'velocity' || plotMode === 'rearPortVelocity') && (
               <>
                 <text
                   x={padL + 8}
-                  y={Math.max(padT + 14, yForVal(17) - 5)}
+                  y={Math.max(padT + 14, yForVal(toDisplayVel(17, unitSystem)) - 5)}
                   fill="#22d3ee"
                   fontSize="10"
                   fontFamily="JetBrains Mono, monospace"
                 >
-                  0.05 Mach (17 m/s)
+                  0.05 Mach ({formatVel(17, unitSystem, 0, 1)})
                 </text>
                 <text
                   x={padL + 8}
-                  y={Math.max(padT + 14, yForVal(25) - 6)}
+                  y={Math.max(padT + 14, yForVal(toDisplayVel(25, unitSystem)) - 6)}
                   fill="#fbbf24"
                   fontSize="10"
                   fontFamily="JetBrains Mono, monospace"
                 >
                   {en
-                    ? '0.073 Mach (25 m/s — turbulence threshold)'
-                    : '0.073 Mach (25 m/s — próg turbulencji)'}
+                    ? `0.073 Mach (${formatVel(25, unitSystem, 0, 1)} — turbulence threshold)`
+                    : `0.073 Mach (${formatVel(25, unitSystem, 0, 1)} — próg turbulencji)`}
                 </text>
               </>
             )}
@@ -1827,7 +1923,7 @@ export function AcousticWorkbench({
               const pathD = s.points
                 .map(
                   (pt, i) =>
-                    `${i === 0 ? 'M' : 'L'} ${xForHz(pt.hz).toFixed(1)} ${yForVal(getPointValue(pt, plotMode)).toFixed(1)}`,
+                    `${i === 0 ? 'M' : 'L'} ${xForHz(pt.hz).toFixed(1)} ${yForVal(getDisplayPointValue(pt, plotMode, unitSystem)).toFixed(1)}`,
                 )
                 .join(' ');
               return (
@@ -1859,7 +1955,7 @@ export function AcousticWorkbench({
                     <circle
                       key={`dot-${s.variantId}`}
                       cx={xForHz(pt.hz)}
-                      cy={yForVal(getPointValue(pt, plotMode))}
+                      cy={yForVal(getDisplayPointValue(pt, plotMode, unitSystem))}
                       r="4.5"
                       fill={s.color}
                       stroke="#0a0b0e"
@@ -1888,10 +1984,15 @@ export function AcousticWorkbench({
                 seriesList.map((s, idx) => {
                   const pt = s.points.find((p) => p.hz === hoverHz);
                   if (!pt) return null;
-                  const val = getPointValue(pt, plotMode);
+                  const val = getDisplayPointValue(pt, plotMode, unitSystem);
                   const refPt = refSeries?.points.find((p) => p.hz === hoverHz);
                   const delta =
-                    idx > 0 && refPt ? val - getPointValue(refPt, plotMode) : null;
+                    idx > 0 && refPt
+                      ? val - getDisplayPointValue(refPt, plotMode, unitSystem)
+                      : null;
+                  const valDec = isImp && plotMode === 'excursion' ? 2 : 1;
+                  const rawVelMs =
+                    plotMode === 'rearPortVelocity' ? pt.rearPortVelocityMs : pt.portVelocityMs;
                   return (
                     <span
                       key={`read-${s.variantId}`}
@@ -1903,11 +2004,11 @@ export function AcousticWorkbench({
                       />
                       <span>{s.name.split(':')[0]}:</span>
                       <strong className="text-white">
-                        {val.toFixed(1)} {currentUnit}
+                        {val.toFixed(valDec)} {currentUnit}
                       </strong>
                       {(plotMode === 'velocity' || plotMode === 'rearPortVelocity') && (
                         <span className="text-cyan-300">
-                          ({(val / (signal.speedOfSoundMs ?? 343.2)).toFixed(3)} M)
+                          ({(rawVelMs / (signal.speedOfSoundMs ?? 343.2)).toFixed(3)} M)
                         </span>
                       )}
                       {delta !== null && (
@@ -1917,7 +2018,7 @@ export function AcousticWorkbench({
                           }
                         >
                           [{delta >= 0 ? '+' : ''}
-                          {delta.toFixed(1)}]
+                          {delta.toFixed(valDec)}]
                         </span>
                       )}
                     </span>
@@ -2293,11 +2394,15 @@ export function AcousticWorkbench({
                         </div>
                         <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
                           <span className="text-zinc-500">Vas</span>
-                          <span className="text-white">{derivedDriver.vas.toFixed(1)} L</span>
+                          <span className="text-white">
+                            {formatVol(derivedDriver.vas, unitSystem, 1, 2)}
+                          </span>
                         </div>
                         <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
                           <span className="text-zinc-500">Xmax</span>
-                          <span className="text-white">{derivedDriver.xmax} mm</span>
+                          <span className="text-white">
+                            {formatLen(derivedDriver.xmax, unitSystem, 1, 2)}
+                          </span>
                         </div>
                         <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
                           <span className="text-zinc-500">SPL</span>
@@ -2305,7 +2410,9 @@ export function AcousticWorkbench({
                         </div>
                         <div className="px-2 py-1 rounded bg-[#161920] flex justify-between gap-1">
                           <span className="text-zinc-500">{en ? 'Cutout' : 'Otwór'}</span>
-                          <span className="text-zinc-200">{inspectedDriverPreset.cutoutDia} mm</span>
+                          <span className="text-zinc-200">
+                            {formatLen(inspectedDriverPreset.cutoutDia, unitSystem, 0, 2)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2361,14 +2468,16 @@ export function AcousticWorkbench({
 
                     <label className="space-y-1">
                       <span className="text-[11px] text-zinc-400 block">
-                        {en ? 'Added Cone Mass (g)' : 'Dodana masa membrany (g)'}
+                        {en ? `Added Cone Mass (${u.mass})` : `Dodana masa membrany (${u.mass})`}
                       </span>
                       <ImmediateNumberInput
                         min={0}
-                        max={500}
-                        decimals={1}
-                        value={selectedVariant.addedMassG ?? 0}
-                        onChange={(addedMassG) => updateSelectedVariant({ addedMassG })}
+                        max={toDisplayMassG(500, unitSystem)}
+                        decimals={isImp ? 2 : 1}
+                        value={toDisplayMassG(selectedVariant.addedMassG ?? 0, unitSystem)}
+                        onChange={(val) =>
+                          updateSelectedVariant({ addedMassG: fromDisplayMassG(val, unitSystem) })
+                        }
                         className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                       />
                     </label>
@@ -2419,14 +2528,16 @@ export function AcousticWorkbench({
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">
-                    {en ? 'Net Volume Vb (L)' : 'Objętość netto Vb (L)'}
+                    {en ? `Net Volume Vb (${u.vol})` : `Objętość netto Vb (${u.vol})`}
                   </span>
                   <ImmediateNumberInput
-                    min={4}
-                    max={800}
-                    decimals={1}
-                    value={selectedVariant.netVolumeL}
-                    onChange={(netVolumeL) => updateSelectedVariant({ netVolumeL })}
+                    min={toDisplayVol(4, unitSystem)}
+                    max={toDisplayVol(800, unitSystem)}
+                    decimals={isImp ? 2 : 1}
+                    value={toDisplayVol(selectedVariant.netVolumeL, unitSystem)}
+                    onChange={(val) =>
+                      updateSelectedVariant({ netVolumeL: fromDisplayVol(val, unitSystem) })
+                    }
                     className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
                 </label>
@@ -2487,8 +2598,8 @@ export function AcousticWorkbench({
                       className="px-3 py-1.5 rounded bg-red-600 text-white font-semibold hover:bg-red-500 transition-colors"
                     >
                       {en
-                        ? 'Switch to Round Bass-Reflex (Ø100 mm)'
-                        : 'Przełącz na Bass-Reflex rurowy (Ø100 mm)'}
+                        ? `Switch to Round Bass-Reflex (Ø${formatLen(100, unitSystem, 0, 2)})`
+                        : `Przełącz na Bass-Reflex rurowy (Ø${formatLen(100, unitSystem, 0, 2)})`}
                     </button>
                   </div>
                 ) : (
@@ -2614,14 +2725,15 @@ export function AcousticWorkbench({
 
                         <label className="sm:col-span-3 space-y-1">
                           <span className="text-[11px] text-zinc-400 block">
-                            {en ? 'Pipe Inner Ø (mm)' : 'Średnica wew. rury Ø (mm)'}
+                            {en ? `Pipe Inner Ø (${u.len})` : `Średnica wew. rury Ø (${u.len})`}
                           </span>
                           <ImmediateNumberInput
-                            min={35}
-                            max={320}
-                            decimals={0}
-                            value={activePipeDiaMm}
-                            onChange={(d) => {
+                            min={toDisplayLen(35, unitSystem)}
+                            max={toDisplayLen(320, unitSystem)}
+                            decimals={isImp ? 2 : 0}
+                            value={toDisplayLen(activePipeDiaMm, unitSystem)}
+                            onChange={(val) => {
+                              const d = fromDisplayLen(val, unitSystem);
                               const area = activePipeCount * Math.PI * Math.pow(d / 20, 2);
                               updateSelectedVariant({
                                 portShape: 'round',
@@ -2636,16 +2748,20 @@ export function AcousticWorkbench({
 
                         <div className="sm:col-span-3 space-y-1">
                           <span className="text-[11px] text-zinc-400 block">
-                            {en ? 'Combined Area S' : 'Pole łączne S'} ({activePipeCount}×Ø{Math.round(activePipeDiaMm)})
+                            {en ? 'Combined Area S' : 'Pole łączne S'} ({activePipeCount}×Ø
+                            {isImp
+                              ? `${toDisplayLen(activePipeDiaMm, unitSystem).toFixed(2)}"`
+                              : Math.round(activePipeDiaMm)}
+                            )
                           </span>
-                          <div className="bg-[#0B1218] border border-cyan-500/35 rounded px-2.5 py-1.5 font-mono-num text-cyan-300 font-semibold flex items-center justify-between">
-                            <span>{selectedVariant.portAreaCm2.toFixed(1)} cm²</span>
+                          <div className="bg-[#0B1218] border border-cyan-500/35 rounded px-2.5 py-1.5 font-mono-num text-cyan-300 font-semibold flex items-center justify-between gap-1">
+                            <span>{formatArea(selectedVariant.portAreaCm2, unitSystem, 1, 1)}</span>
                             <button
                               type="button"
                               title={
                                 en
-                                  ? 'Size minimum pipe diameter for safe air velocity < 17 m/s'
-                                  : 'Dobierz minimalną średnicę rury dla bezpiecznej prędkości powietrza < 17 m/s'
+                                  ? `Size minimum pipe diameter for safe air velocity < ${formatVel(17, unitSystem, 0, 0)}`
+                                  : `Dobierz minimalną średnicę rury dla bezpiecznej prędkości powietrza < ${formatVel(17, unitSystem, 0, 0)}`
                               }
                               onClick={() => {
                                 const peakV = selectedSeries?.peakPortVelocityMs ?? 12;
@@ -2666,9 +2782,9 @@ export function AcousticWorkbench({
                                   portAreaCm2: Number(finalArea.toFixed(1)),
                                 });
                               }}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30"
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 whitespace-nowrap"
                             >
-                              Auto &lt;17 m/s
+                              Auto &lt;{formatVel(17, unitSystem, 0, 0)}
                             </button>
                           </div>
                         </div>
@@ -2697,7 +2813,9 @@ export function AcousticWorkbench({
                                   : 'bg-[#08090C] border-white/[0.08] text-zinc-400 hover:text-white'
                               }`}
                             >
-                              Ø{stdDia} mm
+                              {isImp
+                                ? `Ø${toDisplayLen(stdDia, unitSystem).toFixed(2)}"`
+                                : `Ø${stdDia} mm`}
                             </button>
                           ))}
                         </div>
@@ -2720,14 +2838,16 @@ export function AcousticWorkbench({
 
                         <label className="space-y-1">
                           <span className="text-[11px] text-zinc-400 block">
-                            {en ? 'Port Area S (cm²)' : 'Pole portu S (cm²)'}
+                            {en ? `Port Area S (${u.area})` : `Pole portu S (${u.area})`}
                           </span>
                           <ImmediateNumberInput
-                            min={15}
-                            max={2500}
-                            decimals={1}
-                            value={selectedVariant.portAreaCm2}
-                            onChange={(portAreaCm2) => updateSelectedVariant({ portAreaCm2 })}
+                            min={toDisplayArea(15, unitSystem)}
+                            max={toDisplayArea(2500, unitSystem)}
+                            decimals={isImp ? 2 : 1}
+                            value={toDisplayArea(selectedVariant.portAreaCm2, unitSystem)}
+                            onChange={(val) =>
+                              updateSelectedVariant({ portAreaCm2: fromDisplayArea(val, unitSystem) })
+                            }
                             className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                           />
                         </label>
@@ -2737,7 +2857,9 @@ export function AcousticWorkbench({
                             {en ? 'Equivalent single pipe:' : 'Równoważnik pojedynczej rury:'}
                           </span>
                           <strong className="text-cyan-300">
-                            Ø{activeVariantPortStats?.equivalentRoundDiaMm ?? '—'} mm
+                            {activeVariantPortStats
+                              ? `Ø${formatLen(activeVariantPortStats.equivalentRoundDiaMm, unitSystem, 0, 2)}`
+                              : '—'}
                           </strong>
                         </div>
                       </div>
@@ -2757,7 +2879,7 @@ export function AcousticWorkbench({
                                 : 'Długość tunelu'}
                           </span>
                           <strong className="text-sm text-white">
-                            {Math.round(activeVariantPortStats.lengthMm)} mm
+                            {formatLen(activeVariantPortStats.lengthMm, unitSystem, 0, 2)}
                           </strong>
                         </div>
                         <div>
@@ -2765,7 +2887,7 @@ export function AcousticWorkbench({
                             {en ? 'End correction' : 'Korekta końcowa'}
                           </span>
                           <strong className="text-sm text-zinc-200">
-                            {activeVariantPortStats.endCorrectionMm} mm
+                            {formatLen(activeVariantPortStats.endCorrectionMm, unitSystem, 1, 2)}
                           </strong>
                         </div>
                         <div>
@@ -2781,7 +2903,9 @@ export function AcousticWorkbench({
                                   : 'text-emerald-400'
                             }`}
                           >
-                            {selectedSeries ? `${selectedSeries.peakPortVelocityMs.toFixed(1)} m/s` : '—'}
+                            {selectedSeries
+                              ? formatVel(selectedSeries.peakPortVelocityMs, unitSystem, 1, 1)
+                              : '—'}
                           </strong>
                         </div>
                         <div>
@@ -3103,15 +3227,18 @@ export function AcousticWorkbench({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs items-end">
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">
-                    {en ? 'Air Density ρ (kg/m³)' : 'Gęstość powietrza ρ (kg/m³)'}
+                    {en ? `Air Density ρ (${u.airDensity})` : `Gęstość powietrza ρ (${u.airDensity})`}
                   </span>
                   <ImmediateNumberInput
-                    min={0.9}
-                    max={1.4}
-                    decimals={3}
-                    value={signal.airDensityKgM3 ?? 1.204}
-                    onChange={(airDensityKgM3) =>
-                      setSignal((p) => ({ ...p, airDensityKgM3 }))
+                    min={toDisplayAirDensity(0.9, unitSystem)}
+                    max={toDisplayAirDensity(1.4, unitSystem)}
+                    decimals={isImp ? 4 : 3}
+                    value={toDisplayAirDensity(signal.airDensityKgM3 ?? 1.204, unitSystem)}
+                    onChange={(val) =>
+                      setSignal((p) => ({
+                        ...p,
+                        airDensityKgM3: fromDisplayAirDensity(val, unitSystem),
+                      }))
                     }
                     className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
@@ -3119,15 +3246,18 @@ export function AcousticWorkbench({
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 block">
-                    {en ? 'Speed of Sound c (m/s)' : 'Prędkość dźwięku c (m/s)'}
+                    {en ? `Speed of Sound c (${u.vel})` : `Prędkość dźwięku c (${u.vel})`}
                   </span>
                   <ImmediateNumberInput
-                    min={310}
-                    max={370}
+                    min={toDisplayVel(310, unitSystem)}
+                    max={toDisplayVel(370, unitSystem)}
                     decimals={1}
-                    value={signal.speedOfSoundMs ?? 343.2}
-                    onChange={(speedOfSoundMs) =>
-                      setSignal((p) => ({ ...p, speedOfSoundMs }))
+                    value={toDisplayVel(signal.speedOfSoundMs ?? 343.2, unitSystem)}
+                    onChange={(val) =>
+                      setSignal((p) => ({
+                        ...p,
+                        speedOfSoundMs: fromDisplayVel(val, unitSystem),
+                      }))
                     }
                     className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1.5 font-mono-num text-white focus:outline-none focus:border-red-500"
                   />
@@ -3163,7 +3293,7 @@ export function AcousticWorkbench({
                   <div className="text-zinc-400 font-mono-num">
                     {en ? 'Driver' : 'Głośnik'}: {activeDriverCountForUi}×{' '}
                     {inspectedDriverPreset.name} · {selectedElecLoad.totalNominalOhms.toFixed(1)} Ω · Vb{' '}
-                    {selectedVariant.netVolumeL.toFixed(1)} L ·{' '}
+                    {formatVol(selectedVariant.netVolumeL, unitSystem, 1, 2)} ·{' '}
                     {selectedVariant.enclosureType === 'sealed'
                       ? en
                         ? 'Sealed'
@@ -3209,8 +3339,8 @@ export function AcousticWorkbench({
           </h3>
           <span className="text-[11px] text-zinc-400 font-mono-num">
             {en
-              ? `Main limit: Xmax = ${params.driverXmax} mm · Port threshold: 0.05 Mach (17 m/s)`
-              : `Limit główny: Xmax = ${params.driverXmax} mm · Próg portu: 0.05 Mach (17 m/s)`}
+              ? `Main limit: Xmax = ${formatLen(params.driverXmax, unitSystem, 1, 2)} · Port threshold: 0.05 Mach (${formatVel(17, unitSystem, 0, 1)})`
+              : `Limit główny: Xmax = ${formatLen(params.driverXmax, unitSystem, 1, 2)} · Próg portu: 0.05 Mach (${formatVel(17, unitSystem, 0, 1)})`}
           </span>
         </div>
         <div className="overflow-x-auto">
@@ -3268,7 +3398,7 @@ export function AcousticWorkbench({
                         overXmax ? 'text-amber-400 font-semibold' : 'text-emerald-400'
                       }`}
                     >
-                      {s.peakExcursionMm.toFixed(1)} mm @ {s.peakExcursionHz} Hz
+                      {formatLen(s.peakExcursionMm, unitSystem, 1, 2)} @ {s.peakExcursionHz} Hz
                     </td>
                     <td
                       className={`py-2.5 px-2 whitespace-nowrap ${
@@ -3276,12 +3406,12 @@ export function AcousticWorkbench({
                       }`}
                     >
                       {s.peakPortVelocityMs > 0.1
-                        ? `${s.peakPortVelocityMs.toFixed(1)} m/s (${s.peakPortMach.toFixed(3)}M)`
+                        ? `${formatVel(s.peakPortVelocityMs, unitSystem, 1, 1)} (${s.peakPortMach.toFixed(3)}M)`
                         : '—'}
                     </td>
                     <td className="py-2.5 px-2 text-zinc-300 whitespace-nowrap">
                       {s.portLengthMm !== null && s.firstPortResonanceHz !== null
-                        ? `${Math.round(s.portLengthMm)} mm · ${Math.round(s.firstPortResonanceHz)} Hz`
+                        ? `${formatLen(s.portLengthMm, unitSystem, 0, 2)} · ${Math.round(s.firstPortResonanceHz)} Hz`
                         : '—'}
                     </td>
                     <td className="py-2.5 px-2 text-zinc-200 whitespace-nowrap">
@@ -3349,18 +3479,34 @@ export function AcousticWorkbench({
             { label: 'Qes', val: derivedDriver.qes.toFixed(3), cls: 'text-white' },
             { label: 'Qms', val: derivedDriver.qms.toFixed(2), cls: 'text-white' },
             { label: 'Qts', val: derivedDriver.qts.toFixed(3), cls: 'text-cyan-300' },
-            { label: 'Vas', val: `${derivedDriver.vas.toFixed(1)} L`, cls: 'text-white' },
+            { label: 'Vas', val: formatVol(derivedDriver.vas, unitSystem, 1, 2), cls: 'text-white' },
             { label: 'EBP (Fs/Qes)', val: `${derivedDriver.ebpHz.toFixed(1)} Hz`, cls: 'text-cyan-300' },
             { label: 'SPL 1W/1m', val: `${derivedDriver.spl1w1m.toFixed(1)} dB`, cls: 'text-red-400' },
             { label: '2.83V/1m', val: `${derivedDriver.spl283v1m.toFixed(1)} dB`, cls: 'text-white' },
             { label: 'η0', val: `${derivedDriver.eta0Percent.toFixed(2)}%`, cls: 'text-emerald-400' },
             { label: 'Bl', val: `${derivedDriver.bl.toFixed(2)} T·m`, cls: 'text-white' },
             { label: 'Bl² / Re', val: `${derivedDriver.bl2Re.toFixed(1)} N²/W`, cls: 'text-zinc-200' },
-            { label: 'Mms', val: `${derivedDriver.mms.toFixed(1)} g`, cls: 'text-white' },
+            {
+              label: 'Mms',
+              val: isImp
+                ? `${toDisplayMassG(derivedDriver.mms, unitSystem).toFixed(2)} ${u.mass}`
+                : `${derivedDriver.mms.toFixed(1)} ${u.mass}`,
+              cls: 'text-white',
+            },
             { label: 'Cms', val: `${derivedDriver.cms.toFixed(3)} mm/N`, cls: 'text-zinc-200' },
             { label: 'Rms', val: `${derivedDriver.rms.toFixed(2)} kg/s`, cls: 'text-zinc-200' },
-            { label: en ? 'Sd (total)' : 'Sd (łącz.)', val: `${Math.round(derivedDriver.sdCm2)} cm²`, cls: 'text-white' },
-            { label: en ? 'Vd (total)' : 'Vd (łącz.)', val: `${Math.round(derivedDriver.vdCm3)} cm³`, cls: 'text-white' },
+            {
+              label: en ? 'Sd (total)' : 'Sd (łącz.)',
+              val: formatArea(derivedDriver.sdCm2, unitSystem, 0, 1),
+              cls: 'text-white',
+            },
+            {
+              label: en ? 'Vd (total)' : 'Vd (łącz.)',
+              val: isImp
+                ? `${toDisplaySmallVol(derivedDriver.vdCm3, unitSystem).toFixed(1)} ${u.smallVol}`
+                : `${Math.round(derivedDriver.vdCm3)} ${u.smallVol}`,
+              cls: 'text-white',
+            },
             {
               label: 'Z / Re / Le',
               val: `${derivedDriver.zNom.toFixed(1)} Ω · ${derivedDriver.re.toFixed(2)} Ω · ${derivedDriver.le.toFixed(1)} mH`,
@@ -3368,7 +3514,7 @@ export function AcousticWorkbench({
             },
             {
               label: 'Pe / Xmax',
-              val: `${derivedDriver.ratedPowerTotalW} W · ${derivedDriver.xmax} mm`,
+              val: `${derivedDriver.ratedPowerTotalW} W · ${formatLen(derivedDriver.xmax, unitSystem, 1, 2)}`,
               cls: 'text-red-300',
             },
           ].map((item) => (
@@ -3394,7 +3540,7 @@ export function AcousticWorkbench({
                 <p className="text-[11px] text-zinc-400 leading-relaxed">{sug.subtitle}</p>
                 <div className="pt-1 flex flex-wrap gap-2 text-[11px] font-mono-num">
                   <span className="px-2 py-0.5 rounded bg-[#08090C] text-red-300">
-                    Vnet: {sug.netVolumeL} L
+                    Vnet: {formatVol(sug.netVolumeL, unitSystem, 1, 2)}
                   </span>
                   {sug.tuningHz !== null ? (
                     <>
@@ -3402,7 +3548,7 @@ export function AcousticWorkbench({
                         Fb: {sug.tuningHz} Hz
                       </span>
                       <span className="px-2 py-0.5 rounded bg-[#08090C] text-zinc-300">
-                        Port: {sug.portAreaCm2} cm²
+                        Port: {formatArea(sug.portAreaCm2, unitSystem, 0, 1)}
                       </span>
                     </>
                   ) : (
@@ -3651,19 +3797,39 @@ export function AcousticWorkbench({
                       { label: 'Qes', val: solvedCatalogDriver.qes.toFixed(3), cls: 'text-white' },
                       { label: 'Qms', val: solvedCatalogDriver.qms.toFixed(2), cls: 'text-white' },
                       { label: 'Qts', val: solvedCatalogDriver.qts.toFixed(3), cls: 'text-cyan-300' },
-                      { label: 'Vas', val: `${solvedCatalogDriver.vas.toFixed(1)} L`, cls: 'text-white' },
+                      { label: 'Vas', val: formatVol(solvedCatalogDriver.vas, unitSystem, 1, 2), cls: 'text-white' },
                       { label: 'EBP (Fs/Qes)', val: `${solvedCatalogDriver.ebpHz.toFixed(1)} Hz`, cls: 'text-cyan-300' },
                       { label: 'SPL 1W/1m', val: `${solvedCatalogDriver.spl1w1m.toFixed(1)} dB`, cls: 'text-red-400' },
                       { label: '2.83V/1m', val: `${solvedCatalogDriver.spl283v1m.toFixed(1)} dB`, cls: 'text-white' },
                       { label: en ? 'η0 (Eff.)' : 'η0 (sprawn.)', val: `${solvedCatalogDriver.eta0Percent.toFixed(2)}%`, cls: 'text-emerald-400' },
                       { label: 'Bl', val: `${solvedCatalogDriver.bl.toFixed(2)} T·m`, cls: 'text-white' },
                       { label: 'Bl² / Re', val: `${solvedCatalogDriver.bl2Re.toFixed(1)} N²/W`, cls: 'text-zinc-200' },
-                      { label: 'Mms', val: `${solvedCatalogDriver.mms.toFixed(1)} g`, cls: 'text-white' },
+                      {
+                        label: 'Mms',
+                        val: isImp
+                          ? `${toDisplayMassG(solvedCatalogDriver.mms, unitSystem).toFixed(2)} ${u.mass}`
+                          : `${solvedCatalogDriver.mms.toFixed(1)} ${u.mass}`,
+                        cls: 'text-white',
+                      },
                       { label: 'Cms', val: `${solvedCatalogDriver.cms.toFixed(3)} mm/N`, cls: 'text-zinc-200' },
                       { label: 'Rms', val: `${solvedCatalogDriver.rms.toFixed(2)} kg/s`, cls: 'text-zinc-200' },
-                      { label: 'Sd / Dd', val: `${Math.round(solvedCatalogDriver.sd)} cm² / ${Math.round(solvedCatalogDriver.dd)} mm`, cls: 'text-white' },
-                      { label: en ? 'Vd (1 pc)' : 'Vd (1 szt.)', val: `${Math.round(solvedCatalogDriver.vd)} cm³`, cls: 'text-white' },
-                      { label: 'Xmax', val: `${selectedCatalogDriver.xmax} mm`, cls: 'text-amber-300' },
+                      {
+                        label: 'Sd / Dd',
+                        val: `${formatArea(solvedCatalogDriver.sd, unitSystem, 0, 1)} / ${formatLen(solvedCatalogDriver.dd, unitSystem, 0, 2)}`,
+                        cls: 'text-white',
+                      },
+                      {
+                        label: en ? 'Vd (1 pc)' : 'Vd (1 szt.)',
+                        val: isImp
+                          ? `${toDisplaySmallVol(solvedCatalogDriver.vd, unitSystem).toFixed(1)} ${u.smallVol}`
+                          : `${Math.round(solvedCatalogDriver.vd)} ${u.smallVol}`,
+                        cls: 'text-white',
+                      },
+                      {
+                        label: 'Xmax',
+                        val: formatLen(selectedCatalogDriver.xmax, unitSystem, 1, 2),
+                        cls: 'text-amber-300',
+                      },
                       { label: en ? 'RMS Power (Pe)' : 'Moc RMS (Pe)', val: `${selectedCatalogDriver.powerW} W`, cls: 'text-red-300' },
                       { label: en ? 'Re (series)' : 'Re (szereg.)', val: `${solvedCatalogDriver.re.toFixed(2)} Ω`, cls: 'text-cyan-300' },
                       { label: 'Le', val: `${(selectedCatalogDriver.le ?? 1.8).toFixed(2)} mH`, cls: 'text-zinc-200' },
@@ -3687,19 +3853,27 @@ export function AcousticWorkbench({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono-num">
                     <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
                       <span className="text-zinc-400">{en ? 'Cutout' : 'Otwór'}</span>
-                      <strong className="text-white">{selectedCatalogDriver.cutoutDia} mm</strong>
+                      <strong className="text-white">
+                        {formatLen(selectedCatalogDriver.cutoutDia, unitSystem, 0, 2)}
+                      </strong>
                     </div>
                     <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
                       <span className="text-zinc-400">{en ? 'Outer Ø' : 'Kosz zewn.'}</span>
-                      <strong className="text-white">{selectedCatalogDriver.outerDia} mm</strong>
+                      <strong className="text-white">
+                        {formatLen(selectedCatalogDriver.outerDia, unitSystem, 0, 2)}
+                      </strong>
                     </div>
                     <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
                       <span className="text-zinc-400">{en ? 'Depth' : 'Głębokość'}</span>
-                      <strong className="text-white">{selectedCatalogDriver.depth} mm</strong>
+                      <strong className="text-white">
+                        {formatLen(selectedCatalogDriver.depth, unitSystem, 0, 2)}
+                      </strong>
                     </div>
                     <div className="px-2.5 py-1.5 rounded bg-[#161920] border border-white/[0.06] flex justify-between">
                       <span className="text-zinc-400">{en ? 'Displ.' : 'Wyporność'}</span>
-                      <strong className="text-white">{selectedCatalogDriver.displacement} L</strong>
+                      <strong className="text-white">
+                        {formatVol(selectedCatalogDriver.displacement, unitSystem, 2, 3)}
+                      </strong>
                     </div>
                   </div>
                 </div>

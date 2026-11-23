@@ -1,4 +1,5 @@
 import type { AcousticResult, BoxParams } from '../engine/types';
+import { formatArea, formatVel, formatVol, formatVolNum, getUnitLabels } from '../engine/units';
 import { useI18n } from '../i18n';
 
 interface TelemetryStripProps {
@@ -7,8 +8,9 @@ interface TelemetryStripProps {
 }
 
 export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const isEn = lang === 'en';
+  const u = getUnitLabels(unitSystem);
   const isBandpass =
     params.enclosureType === 'bandpass_4th' || params.enclosureType === 'bandpass_6th';
 
@@ -55,11 +57,11 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
         </div>
         <div className="font-mono-num text-base sm:text-lg font-semibold text-white mt-0.5" data-testid="metric-vnet">
           {isBandpass
-            ? `${acoustics.ventedChamberNetL.toFixed(1)} / ${acoustics.sealedChamberNetL.toFixed(1)} L`
-            : `${acoustics.netVolumeL.toFixed(1)} L`}
+            ? `${formatVolNum(acoustics.ventedChamberNetL, unitSystem, 1, 2)} / ${formatVol(acoustics.sealedChamberNetL, unitSystem, 1, 2)}`
+            : formatVol(acoustics.netVolumeL, unitSystem, 1, 2)}
         </div>
         <div className="text-[11px] text-zinc-500 font-mono-num">
-          {isEn ? 'Gross' : 'Brutto'} {acoustics.grossVolumeL.toFixed(1)} L
+          {isEn ? 'Gross' : 'Brutto'} {formatVol(acoustics.grossVolumeL, unitSystem, 1, 2)}
         </div>
       </div>
 
@@ -109,15 +111,15 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
               ? 'Sealed'
               : 'Zamknięta'
             : params.enclosureType === 'bandpass_6th'
-              ? `${acoustics.rearPortAreaCm2.toFixed(0)} / ${acoustics.portAreaCm2.toFixed(0)} cm²`
-              : `${acoustics.portAreaCm2.toFixed(0)} cm²`}
+              ? `${formatArea(acoustics.rearPortAreaCm2, unitSystem, 0, 1).replace(` ${u.area}`, '')} / ${formatArea(acoustics.portAreaCm2, unitSystem, 0, 1)}`
+              : formatArea(acoustics.portAreaCm2, unitSystem, 0, 1)}
         </div>
         <div className="text-[11px] text-zinc-500 font-mono-num">
           {params.enclosureType === 'sealed'
             ? isEn
               ? 'No vented opening'
               : 'Brak otworu wentylacyjnego'
-            : `${isEn ? 'Recommended min.' : 'Zalecane min.'} ${acoustics.recommendedMinPortAreaCm2} cm²`}
+            : `${isEn ? 'Recommended min.' : 'Zalecane min.'} ${formatArea(acoustics.recommendedMinPortAreaCm2, unitSystem, 0, 1)}`}
         </div>
       </div>
 
@@ -127,7 +129,9 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
         </div>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mt-0.5">
           <span className="font-mono-num text-base sm:text-lg font-semibold text-white">
-            {params.enclosureType === 'sealed' ? '—' : `${acoustics.portVelocityMs.toFixed(1)} m/s`}
+            {params.enclosureType === 'sealed'
+              ? '—'
+              : formatVel(acoustics.portVelocityMs, unitSystem, 1, 1)}
           </span>
           <span className={`text-xs font-medium ${velocityColor}`}>{velocityLabel}</span>
         </div>
@@ -142,13 +146,19 @@ export function TelemetryStrip({ params, acoustics }: TelemetryStripProps) {
           {isEn ? 'Internal displacement' : 'Wyporność wewnętrzna'}
         </div>
         <div className="font-mono-num text-base sm:text-lg font-semibold text-white mt-0.5">
-          {(acoustics.portTotalDisplacementL + acoustics.totalDriverDisplacementL + params.bracingVolumeL).toFixed(1)} L
+          {formatVol(
+            acoustics.portTotalDisplacementL + acoustics.totalDriverDisplacementL + params.bracingVolumeL,
+            unitSystem,
+            1,
+            2,
+          )}
         </div>
         <div className="text-[11px] text-zinc-500 font-mono-num sm:whitespace-nowrap">
-          Port {acoustics.portTotalDisplacementL.toFixed(1)} · {isEn ? 'Driver' : 'Głośnik'}{' '}
-          {acoustics.totalDriverDisplacementL.toFixed(1)} L
+          Port {formatVolNum(acoustics.portTotalDisplacementL, unitSystem, 1, 2)} ·{' '}
+          {isEn ? 'Driver' : 'Głośnik'} {formatVol(acoustics.totalDriverDisplacementL, unitSystem, 1, 2)}
         </div>
       </div>
     </section>
   );
 }
+

@@ -25,6 +25,18 @@ import {
   type WdrUnitSystem,
 } from '../engine/winisdWdr';
 import type { CoilWiringMode, DriverPreset, VoiceCoilCount } from '../engine/types';
+import {
+  fromDisplayArea,
+  fromDisplayLen,
+  fromDisplayMassG,
+  fromDisplayVol,
+  getUnitLabels,
+  toDisplayArea,
+  toDisplayLen,
+  toDisplayMassG,
+  toDisplaySmallVol,
+  toDisplayVol,
+} from '../engine/units';
 import { useI18n } from '../i18n';
 import { ImmediateNumberInput } from './ImmediateNumberInput';
 
@@ -70,8 +82,10 @@ export function DriverTsModal({
   onClose,
   onSaveDriver,
 }: DriverTsModalProps) {
-  const { lang } = useI18n();
+  const { lang, unitSystem } = useI18n();
   const en = lang === 'en';
+  const u = getUnitLabels(unitSystem);
+  const isImp = unitSystem === 'imperial';
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
   const [sizeLabel, setSizeLabel] = useState('12"');
@@ -780,16 +794,18 @@ export function DriverTsModal({
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 flex items-center justify-between">
-                    <span>Vas (L)</span>
+                    <span>Vas ({u.vol})</span>
                     {vasAuto && <span className="text-[9px] text-cyan-300 font-mono-num">AUTO</span>}
                   </span>
                   <ImmediateNumberInput
-                    min={1}
-                    max={1000}
-                    decimals={2}
+                    min={toDisplayVol(1, unitSystem)}
+                    max={toDisplayVol(1000, unitSystem)}
+                    decimals={isImp ? 3 : 2}
                     disabled={vasAuto}
-                    value={vasAuto ? solved.vas : solverInput.vas}
-                    onChange={(vas) => setSolverInput((p) => ({ ...p, vas }))}
+                    value={toDisplayVol(vasAuto ? solved.vas : solverInput.vas, unitSystem)}
+                    onChange={(vas) =>
+                      setSolverInput((p) => ({ ...p, vas: fromDisplayVol(vas, unitSystem) }))
+                    }
                     className={`w-full rounded px-2 py-1.5 text-xs font-mono-num focus:outline-none ${
                       vasAuto
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -800,16 +816,18 @@ export function DriverTsModal({
 
                 <label className="space-y-1">
                   <span className="text-[11px] text-zinc-400 flex items-center justify-between">
-                    <span>Mms (g)</span>
+                    <span>Mms ({u.mass})</span>
                     {mmsAuto && <span className="text-[9px] text-cyan-300 font-mono-num">AUTO</span>}
                   </span>
                   <ImmediateNumberInput
-                    min={5}
-                    max={2000}
-                    decimals={1}
+                    min={toDisplayMassG(5, unitSystem)}
+                    max={toDisplayMassG(2000, unitSystem)}
+                    decimals={isImp ? 2 : 1}
                     disabled={mmsAuto}
-                    value={mmsAuto ? solved.mms : solverInput.mms}
-                    onChange={(mms) => setSolverInput((p) => ({ ...p, mms }))}
+                    value={toDisplayMassG(mmsAuto ? solved.mms : solverInput.mms, unitSystem)}
+                    onChange={(mms) =>
+                      setSolverInput((p) => ({ ...p, mms: fromDisplayMassG(mms, unitSystem) }))
+                    }
                     className={`w-full rounded px-2 py-1.5 text-xs font-mono-num focus:outline-none ${
                       mmsAuto
                         ? 'bg-[#0B1218] border border-cyan-500/35 text-cyan-300'
@@ -855,7 +873,7 @@ export function DriverTsModal({
                           : 'bg-[#08090C] text-zinc-400'
                       }`}
                     >
-                      Sd (cm²)
+                      Sd ({u.area})
                     </button>
                     <button
                       type="button"
@@ -866,7 +884,7 @@ export function DriverTsModal({
                           : 'bg-[#08090C] text-zinc-400'
                       }`}
                     >
-                      {en ? 'from Dd (mm)' : 'z Dd (mm)'}
+                      {en ? `from Dd (${u.len})` : `z Dd (${u.len})`}
                     </button>
                   </div>
                 </div>
@@ -875,23 +893,33 @@ export function DriverTsModal({
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
                       {solverInput.sdInputMode === 'direct_sd'
-                        ? 'Sd (cm²)'
+                        ? `Sd (${u.area})`
                         : en
-                          ? 'Dd eff. (mm)'
-                          : 'Dd efekt. (mm)'}
+                          ? `Dd eff. (${u.len})`
+                          : `Dd efekt. (${u.len})`}
                     </span>
                     <ImmediateNumberInput
-                      min={solverInput.sdInputMode === 'direct_sd' ? 15 : 40}
-                      max={3000}
-                      decimals={1}
+                      min={
+                        solverInput.sdInputMode === 'direct_sd'
+                          ? toDisplayArea(15, unitSystem)
+                          : toDisplayLen(40, unitSystem)
+                      }
+                      max={
+                        solverInput.sdInputMode === 'direct_sd'
+                          ? toDisplayArea(3000, unitSystem)
+                          : toDisplayLen(3000, unitSystem)
+                      }
+                      decimals={isImp ? 2 : 1}
                       value={
                         solverInput.sdInputMode === 'direct_sd'
-                          ? solverInput.sd
-                          : solverInput.dd
+                          ? toDisplayArea(solverInput.sd, unitSystem)
+                          : toDisplayLen(solverInput.dd, unitSystem)
                       }
                       onChange={(val) =>
                         setSolverInput((p) =>
-                          p.sdInputMode === 'direct_sd' ? { ...p, sd: val } : { ...p, dd: val },
+                          p.sdInputMode === 'direct_sd'
+                            ? { ...p, sd: fromDisplayArea(val, unitSystem) }
+                            : { ...p, dd: fromDisplayLen(val, unitSystem) },
                         )
                       }
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
@@ -942,13 +970,15 @@ export function DriverTsModal({
                 </span>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="space-y-1">
-                    <span className="text-[11px] text-zinc-400 block">Xmax (mm)</span>
+                    <span className="text-[11px] text-zinc-400 block">Xmax ({u.len})</span>
                     <ImmediateNumberInput
-                      min={1}
-                      max={80}
-                      decimals={1}
-                      value={solverInput.xmax}
-                      onChange={(xmax) => setSolverInput((p) => ({ ...p, xmax }))}
+                      min={toDisplayLen(1, unitSystem)}
+                      max={toDisplayLen(80, unitSystem)}
+                      decimals={isImp ? 2 : 1}
+                      value={toDisplayLen(solverInput.xmax, unitSystem)}
+                      onChange={(xmax) =>
+                        setSolverInput((p) => ({ ...p, xmax: fromDisplayLen(xmax, unitSystem) }))
+                      }
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
@@ -967,53 +997,53 @@ export function DriverTsModal({
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
-                      {en ? 'CAD Cutout (mm)' : 'Otwór CAD (mm)'}
+                      {en ? `CAD Cutout (${u.len})` : `Otwór CAD (${u.len})`}
                     </span>
                     <ImmediateNumberInput
-                      min={80}
-                      max={500}
-                      decimals={0}
-                      value={cutoutDia}
-                      onChange={setCutoutDia}
+                      min={toDisplayLen(80, unitSystem)}
+                      max={toDisplayLen(500, unitSystem)}
+                      decimals={isImp ? 2 : 0}
+                      value={toDisplayLen(cutoutDia, unitSystem)}
+                      onChange={(v) => setCutoutDia(fromDisplayLen(v, unitSystem))}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
-                      {en ? 'Outer Frame (mm)' : 'Kosz zewn. (mm)'}
+                      {en ? `Outer Frame (${u.len})` : `Kosz zewn. (${u.len})`}
                     </span>
                     <ImmediateNumberInput
-                      min={100}
-                      max={560}
-                      decimals={0}
-                      value={outerDia}
-                      onChange={setOuterDia}
+                      min={toDisplayLen(100, unitSystem)}
+                      max={toDisplayLen(560, unitSystem)}
+                      decimals={isImp ? 2 : 0}
+                      value={toDisplayLen(outerDia, unitSystem)}
+                      onChange={(v) => setOuterDia(fromDisplayLen(v, unitSystem))}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
-                      {en ? 'Depth (mm)' : 'Głębokość (mm)'}
+                      {en ? `Depth (${u.len})` : `Głębokość (${u.len})`}
                     </span>
                     <ImmediateNumberInput
-                      min={50}
-                      max={400}
-                      decimals={0}
-                      value={depth}
-                      onChange={setDepth}
+                      min={toDisplayLen(50, unitSystem)}
+                      max={toDisplayLen(400, unitSystem)}
+                      decimals={isImp ? 2 : 0}
+                      value={toDisplayLen(depth, unitSystem)}
+                      onChange={(v) => setDepth(fromDisplayLen(v, unitSystem))}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
                   <label className="space-y-1">
                     <span className="text-[11px] text-zinc-400 block">
-                      {en ? 'Displacement (L)' : 'Wyporność (L)'}
+                      {en ? `Displacement (${u.vol})` : `Wyporność (${u.vol})`}
                     </span>
                     <ImmediateNumberInput
-                      min={0.2}
-                      max={20}
-                      decimals={2}
-                      value={displacement}
-                      onChange={setDisplacement}
+                      min={toDisplayVol(0.2, unitSystem)}
+                      max={toDisplayVol(20, unitSystem)}
+                      decimals={isImp ? 3 : 2}
+                      value={toDisplayVol(displacement, unitSystem)}
+                      onChange={(v) => setDisplacement(fromDisplayVol(v, unitSystem))}
                       className="w-full bg-[#08090C] border border-white/[0.1] rounded px-2 py-1 text-xs font-mono-num text-white focus:outline-none focus:border-red-500"
                     />
                   </label>
@@ -1058,7 +1088,11 @@ export function DriverTsModal({
                   </div>
                   <div className="flex justify-between gap-2 whitespace-nowrap">
                     <span className="text-zinc-400">Vd:</span>
-                    <strong className="text-white">{Math.round(solved.vd)} cm³</strong>
+                    <strong className="text-white">
+                      {isImp
+                        ? `${toDisplaySmallVol(solved.vd, unitSystem).toFixed(1)} ${u.smallVol}`
+                        : `${Math.round(solved.vd)} ${u.smallVol}`}
+                    </strong>
                   </div>
                   <div className="flex justify-between gap-2 whitespace-nowrap">
                     <span className="text-zinc-400">Rms:</span>
@@ -1071,7 +1105,9 @@ export function DriverTsModal({
                   <div className="flex justify-between gap-2 whitespace-nowrap">
                     <span className="text-zinc-400">Sd / Dd:</span>
                     <strong className="text-zinc-200">
-                      {Math.round(solved.sd)}/{Math.round(solved.dd)}
+                      {isImp
+                        ? `${toDisplayArea(solved.sd, unitSystem).toFixed(1)}/${toDisplayLen(solved.dd, unitSystem).toFixed(2)}`
+                        : `${Math.round(solved.sd)}/${Math.round(solved.dd)}`}
                     </strong>
                   </div>
                 </div>

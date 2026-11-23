@@ -6,12 +6,15 @@ import type {
   CutSheetSummary,
   PanelCut,
   PlacedPanel,
+  UnitSystem,
 } from './types';
+import { formatLen, formatLenNum } from './units';
 
 export function generateCutList(
   params: BoxParams,
   acoustics: AcousticResult,
   lang: AppLanguage = 'pl',
+  unitSystem: UnitSystem = 'metric',
 ): PanelCut[] {
   const isEn = lang === 'en';
   const W = Math.round(acoustics.effectiveExternalWidth);
@@ -78,21 +81,23 @@ export function generateCutList(
     });
   };
 
+  const lenSuffix = unitSystem === 'imperial' ? 'in' : 'mm';
+  const driverCutStr = formatLen(params.driverCutoutDia, unitSystem, 0, 2);
   const driverText =
     params.driverCount > 1
       ? isEn
-        ? `${params.driverCount}× cutout Ø${params.driverCutoutDia} mm (${acoustics.driverLayoutLabel})`
-        : `${params.driverCount}× otwór Ø${params.driverCutoutDia} mm (${acoustics.driverLayoutLabel})`
+        ? `${params.driverCount}× cutout Ø${driverCutStr} (${acoustics.driverLayoutLabel})`
+        : `${params.driverCount}× otwór Ø${driverCutStr} (${acoustics.driverLayoutLabel})`
       : isEn
-        ? `Cutout Ø${params.driverCutoutDia} mm`
-        : `Otwór Ø${params.driverCutoutDia} mm`;
+        ? `Cutout Ø${driverCutStr}`
+        : `Otwór Ø${driverCutStr}`;
 
   const effPortW = Math.round(acoustics.effectivePortWidth);
   const effRearPortW = Math.round(acoustics.effectiveRearPortWidth);
-  const effPortDia = Math.round(acoustics.effectivePortDiameter);
+  const effPortDiaStr = formatLen(acoustics.effectivePortDiameter, unitSystem, 0, 2);
   const roundPortText = isEn
-    ? `${params.portCount}× port Ø${effPortDia} mm`
-    : `${params.portCount}× rura Ø${effPortDia} mm`;
+    ? `${params.portCount}× port Ø${effPortDiaStr}`
+    : `${params.portCount}× rura Ø${effPortDiaStr}`;
 
   // Top & Bottom (split if top has driver or port cutouts)
   const topHasDriver = effectiveDriverFace === 'top';
@@ -202,15 +207,20 @@ export function generateCutList(
         ? 'dół'
         : 'prawy bok';
 
+  const portWStr = formatLenNum(effPortW, unitSystem, 0, 2);
+  const portHStr = formatLenNum(acoustics.effectivePortHeight, unitSystem, 0, 2);
+  const rearPortWStr = formatLenNum(effRearPortW, unitSystem, 0, 2);
+  const rearPortHStr = formatLenNum(acoustics.effectiveRearPortHeight, unitSystem, 0, 2);
+
   let frontNotes = '';
   if (params.enclosureType === 'bandpass_4th') {
     frontNotes = isEn
-      ? `Acrylic window + port ${effPortW} × ${Math.round(acoustics.effectivePortHeight)} mm`
-      : `Szyba inspekcyjna + port ${effPortW} × ${Math.round(acoustics.effectivePortHeight)} mm`;
+      ? `Acrylic window + port ${portWStr} × ${portHStr} ${lenSuffix}`
+      : `Szyba inspekcyjna + port ${portWStr} × ${portHStr} ${lenSuffix}`;
   } else if (params.enclosureType === 'bandpass_6th') {
     frontNotes = isEn
-      ? `Front port ${effPortW}×${Math.round(acoustics.effectivePortHeight)} + rear port ${effRearPortW}×${Math.round(acoustics.effectiveRearPortHeight)} mm`
-      : `Port przód ${effPortW}×${Math.round(acoustics.effectivePortHeight)} + port tył ${effRearPortW}×${Math.round(acoustics.effectiveRearPortHeight)} mm`;
+      ? `Front port ${portWStr}×${portHStr} + rear port ${rearPortWStr}×${rearPortHStr} ${lenSuffix}`
+      : `Port przód ${portWStr}×${portHStr} + port tył ${rearPortWStr}×${rearPortHStr} ${lenSuffix}`;
   } else {
     const frontParts: string[] = [];
     if (effectiveDriverFace === 'front') frontParts.push(driverText);
@@ -218,11 +228,11 @@ export function generateCutList(
       frontParts.push(
         slotSide === 'bottom'
           ? isEn
-            ? `bottom port ${Math.round(acoustics.effectivePortHeight)}×${effPortW} mm`
-            : `port dolny ${Math.round(acoustics.effectivePortHeight)}×${effPortW} mm`
+            ? `bottom port ${portHStr}×${portWStr} ${lenSuffix}`
+            : `port dolny ${portHStr}×${portWStr} ${lenSuffix}`
           : isEn
-            ? `port (${slotSideLabel}) ${effPortW}×${Math.round(acoustics.effectivePortHeight)} mm`
-            : `port (${slotSideLabel}) ${effPortW}×${Math.round(acoustics.effectivePortHeight)} mm`,
+            ? `port (${slotSideLabel}) ${portWStr}×${portHStr} ${lenSuffix}`
+            : `port (${slotSideLabel}) ${portWStr}×${portHStr} ${lenSuffix}`,
       );
     } else if (effectivePortFace === 'front') {
       frontParts.push(roundPortText);

@@ -36,8 +36,9 @@
 - **Detailed panel schedule**: accounts for material thickness (`15–25 mm`), double front baffle, slot-port dividers, and bandpass internal walls, with CSV export.
 - **2D sheet nesting optimizer**: packs panels onto standard wood sheets (e.g., `2500 × 1250 mm`) with saw-kerf allowance, utilization percentage, and waste metrics.
 
-### 3. Bilingual UI, Sharing & Offline Persistence
+### 3. Bilingual UI, Metric / Imperial Units & Offline Persistence
 - **Instant `PL / EN` toggle** in the top header (persisted in `localStorage` and `?lang=en|pl` URL parameter).
+- **Metric / Imperial unit switch** (`mm, L, cm², m/s, kg, m², g` ↔ `in, ft³, in², ft/s, lb, ft², oz`) in the top header (persisted in `localStorage` and `?units=metric|imperial`), converting all dimensions, volumes, port areas, velocities, charts, cut-lists, CSV exports, and T-S inputs while keeping canonical metric precision internally.
 - **Offline-ready persistence**: projects and custom drivers stored in `localStorage`, JSON driver database export/import, and single-URL project sharing (`?model=...`).
 
 ---
@@ -76,16 +77,17 @@ Sample slot-ported enclosure (`680 × 380 mm`, `18 mm` birch plywood, `55.0 L` n
 
 ## Unit Tests & Verification
 
-The acoustic solver, T-S solver, WinISD `.wdr` parser, cut-list/sheet-nesting engine, and WSD simulator are verified by **39 unit tests** (`node:test` via `tsx`):
+The acoustic solver, T-S solver, WinISD `.wdr` parser, unit conversions, cut-list/sheet-nesting engine, and WSD simulator are verified by **41 unit tests** (`node:test` via `tsx`):
 
 ```bash
-# Run all acoustic, T-S solver, .wdr parser, and WSD simulator unit tests
+# Run all acoustic, T-S solver, .wdr parser, unit conversion, and WSD simulator unit tests
 npx --yes tsx --test \
   src/engine/acoustics.test.ts \
   src/engine/simulator.test.ts \
   src/engine/tsSolver.test.ts \
   src/engine/winisdWdr.test.ts \
-  src/engine/referenceComparison.test.ts
+  src/engine/referenceComparison.test.ts \
+  src/engine/units.test.ts
 
 # TypeScript type-checking
 npm run lint
@@ -100,19 +102,20 @@ npm run build
 
 ```text
 └── src/
-    ├── i18n.tsx                     # Bilingual PL/EN LanguageProvider & locale helpers
+    ├── i18n.tsx                     # Bilingual PL/EN LanguageProvider, unit system context & locale helpers
     ├── engine/
     │   ├── acoustics.ts             # Coupled CAD dimension solver, Helmholtz Fb, L/Aero ports, collisions
     │   ├── simulator.ts             # WSD simulator (17 curves, DSP filters, alignments)
     │   ├── tsSolver.ts              # Thiele-Small solver (Q triad, Mms/Cms, Bl, SPL, preset builder)
     │   ├── winisdWdr.ts             # WinISD .wdr INI parser & SI/practical unit auto-detection
+    │   ├── units.ts                 # Bidirectional metric <-> imperial converters & display formatters
     │   ├── cutlist.ts               # Panel cut-list generator & 2D sheet nesting optimizer
     │   ├── sceneBuilder.ts          # Three.js parametric 3D geometry generator
     │   ├── materials3d.ts           # Procedural birch plywood, MDF, and laminate textures
     │   ├── presets.ts               # Built-in driver preset & enclosure templates
     │   ├── sharing.ts               # URL model token serialization/deserialization
     │   ├── types.ts                 # CAD & Thiele-Small TypeScript domain types
-    │   └── *.test.ts                # 39 unit tests (physics, solver, WSD, .wdr, i18n)
+    │   └── *.test.ts                # 41 unit tests (physics, solver, WSD, .wdr, units, i18n)
     └── components/
         ├── AcousticWorkbench.tsx    # WSD laboratory & multi-variant comparison workbench
         ├── DriverTsModal.tsx        # Custom T-S driver & .wdr import modal
