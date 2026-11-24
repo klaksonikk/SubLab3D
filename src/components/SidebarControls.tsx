@@ -18,6 +18,7 @@ import type {
   AcousticResult,
   BoxAutoCalcField,
   BoxParams,
+  BoxTemplatePreset,
   CoilWiringMode,
   DriverFace,
   DriverPattern,
@@ -53,8 +54,11 @@ interface SidebarControlsProps {
   params: BoxParams;
   acoustics: AcousticResult;
   customDrivers: DriverPreset[];
+  customTemplates: BoxTemplatePreset[];
+  activeTemplateId: string;
   onChange: (patch: Partial<BoxParams>) => void;
   onApplyTemplate: (templateId: string) => void;
+  onDeleteCustomTemplate: (templateId: string) => void;
   onSaveCustomDriver: (
     driver: DriverPreset,
     applyToProjectToo?: boolean,
@@ -173,8 +177,11 @@ export function SidebarControls({
   params,
   acoustics,
   customDrivers,
+  customTemplates,
+  activeTemplateId,
   onChange,
   onApplyTemplate,
+  onDeleteCustomTemplate,
   onSaveCustomDriver,
   onDeleteCustomDriver,
   onOpenDriverModal,
@@ -376,18 +383,61 @@ export function SidebarControls({
           <label htmlFor="template-select" className="block text-xs font-medium text-zinc-300 mb-1.5">
             {en ? 'Project Template Preset' : 'Gotowy szablon projektu'}
           </label>
-          <select
-            id="template-select"
-            defaultValue="daily-12-slot"
-            onChange={(e) => onApplyTemplate(e.target.value)}
-            className="w-full bg-[#08090C] border border-white/[0.12] rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-red-500"
-          >
-            {BOX_TEMPLATE_PRESETS.map((tpl) => (
-              <option key={tpl.id} value={tpl.id}>
-                {getTemplateName(tpl, lang)}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1.5">
+            {(() => {
+              const allKnownTemplates = [...customTemplates, ...BOX_TEMPLATE_PRESETS];
+              const isKnownTemplate = allKnownTemplates.some((t) => t.id === activeTemplateId);
+              const activeCustomTpl = customTemplates.find((t) => t.id === activeTemplateId);
+              return (
+                <>
+                  <select
+                    id="template-select"
+                    value={isKnownTemplate ? activeTemplateId : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__custom__') {
+                        onApplyTemplate(e.target.value);
+                      }
+                    }}
+                    className="min-w-0 flex-1 bg-[#08090C] border border-white/[0.12] rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-red-500"
+                  >
+                    {!isKnownTemplate && (
+                      <option value="__custom__">
+                        {en ? 'Custom / Shared Project' : 'Własny / Udostępniony projekt'}
+                      </option>
+                    )}
+                    {customTemplates.length > 0 && (
+                      <optgroup label={en ? 'My Projects (Wizard)' : 'Moje projekty (Kreator)'}>
+                        {customTemplates.map((tpl) => (
+                          <option key={tpl.id} value={tpl.id}>
+                            {getTemplateName(tpl, lang)}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label={en ? 'Built-in Presets' : 'Gotowe szablony'}>
+                      {BOX_TEMPLATE_PRESETS.map((tpl) => (
+                        <option key={tpl.id} value={tpl.id}>
+                          {getTemplateName(tpl, lang)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  {activeCustomTpl && (
+                    <button
+                      type="button"
+                      data-testid="delete-custom-template-btn"
+                      onClick={() => onDeleteCustomTemplate(activeCustomTpl.id)}
+                      title={en ? 'Delete saved project template' : 'Usuń zapisany szablon projektu'}
+                      aria-label={en ? 'Delete saved project template' : 'Usuń zapisany szablon projektu'}
+                      className="shrink-0 p-2 rounded-md bg-[#08090C] border border-white/[0.12] text-zinc-400 hover:text-red-400 hover:border-red-500/50 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         </div>
 
         <div>

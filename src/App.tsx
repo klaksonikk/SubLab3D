@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Share2, Sliders } from 'lucide-react';
+import { FolderPlus, Share2, Sliders } from 'lucide-react';
 import { calculateAcoustics } from './engine/acoustics';
 import { generateCutList, optimizeCutSheet } from './engine/cutlist';
 import {
@@ -8,7 +8,7 @@ import {
   DRIVER_PRESETS,
 } from './engine/presets';
 import { decodeModelToken } from './engine/sharing';
-import type { BoxParams, CoilWiringMode, DriverPreset } from './engine/types';
+import type { BoxParams, BoxTemplatePreset, CoilWiringMode, DriverPreset } from './engine/types';
 import { SidebarControls } from './components/SidebarControls';
 import { TelemetryStrip } from './components/TelemetryStrip';
 import { Viewport3D } from './components/Viewport3D';
@@ -18,12 +18,15 @@ import { SheetNestingView } from './components/SheetNestingView';
 import { AcousticWorkbench } from './components/AcousticWorkbench';
 import { ShareModal } from './components/ShareModal';
 import { DriverTsModal } from './components/DriverTsModal';
+import { NewProjectWizardModal } from './components/NewProjectWizardModal';
 import { useI18n } from './i18n';
 
 type ActiveView = '3d' | 'chart' | 'workbench' | 'cutlist' | 'nesting';
 
 const STORAGE_KEY = 'subbox_cad_project_v1';
 const CUSTOM_DRIVERS_KEY = 'subbox_cad_custom_drivers_v1';
+const CUSTOM_TEMPLATES_KEY = 'subbox_cad_custom_templates_v1';
+const ACTIVE_TEMPLATE_KEY = 'subbox_cad_active_template_v1';
 
 function normalizeCustomDriver(raw: DriverPreset): DriverPreset {
   const voiceCoilCount = raw.voiceCoilCount === 2 ? 2 : 1;
@@ -45,6 +48,26 @@ function loadCustomDrivers(): DriverPreset[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as DriverPreset[];
     return Array.isArray(parsed) ? parsed.map(normalizeCustomDriver) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadCustomTemplates(): BoxTemplatePreset[] {
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_TEMPLATES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (t): t is BoxTemplatePreset =>
+        Boolean(t) &&
+        typeof t === 'object' &&
+        typeof (t as BoxTemplatePreset).id === 'string' &&
+        typeof (t as BoxTemplatePreset).name === 'string' &&
+        Boolean((t as BoxTemplatePreset).params) &&
+        typeof (t as BoxTemplatePreset).params === 'object',
+    );
   } catch {
     return [];
   }
@@ -127,8 +150,22 @@ function migrateBoxParams(
 function loadInitialState(): {
   params: BoxParams;
   customDrivers: DriverPreset[];
+  customTemplates: BoxTemplatePreset[];
+  activeTemplateId: string;
 } {
   let drivers = loadCustomDrivers();
+  const templates = loadCustomTemplates();
+  const knownIds = new Set([...templates, ...BOX_TEMPLATE_PRESETS].map((t) => t.id));
+  let storedTemplateId = 'daily-12-slot';
+  try {
+    const savedId = window.localStorage.getItem(ACTIVE_TEMPLATE_KEY);
+    if (savedId && (savedId === '__custom__' || knownIds.has(savedId))) {
+      storedTemplateId = savedId;
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+
   try {
     const query = new URLSearchParams(window.location.search);
     const modelToken = query.get('model');
@@ -144,18 +181,34 @@ function loadInitialState(): {
         return {
           params: migrateBoxParams(decoded.params, drivers),
           customDrivers: drivers,
+          customTemplates: templates,
+          activeTemplateId: '__custom__',
         };
       }
     }
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { params: DEFAULT_BOX_PARAMS, customDrivers: drivers };
+    if (!raw) {
+      return {
+        params: DEFAULT_BOX_PARAMS,
+        customDrivers: drivers,
+        customTemplates: templates,
+        activeTemplateId: 'daily-12-slot',
+      };
+    }
     const parsed = JSON.parse(raw) as Partial<BoxParams>;
     return {
       params: migrateBoxParams(parsed, drivers),
       customDrivers: drivers,
+      customTemplates: templates,
+      activeTemplateId: storedTemplateId,
     };
   } catch {
-    return { params: DEFAULT_BOX_PARAMS, customDrivers: drivers };
+    return {
+      params: DEFAULT_BOX_PARAMS,
+      customDrivers: drivers,
+      customTemplates: templates,
+      activeTemplateId: 'daily-12-slot',
+    };
   }
 }
 
@@ -165,14 +218,23 @@ export default function App() {
   const initial = useMemo(() => loadInitialState(), []);
   const [params, setParams] = useState<BoxParams>(initial.params);
   const [customDrivers, setCustomDrivers] = useState<DriverPreset[]>(initial.customDrivers);
+  const [customTemplates, setCustomTemplates] = useState<BoxTemplatePreset[]>(initial.customTemplates);
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(initial.activeTemplateId);
   const [activeView, setActiveView] = useState<ActiveView>('3d');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [mobileParamsOpen, setMobileParamsOpen] = useState(false);
 
-  // Shared Driver T-S Modal accessible from both Sidebar and WSD
+  // Shared Driver T-S Modal accessible from Sidebar, WSD, and New Project Wizard
   const [driverModalOpen, setDriverModalOpen] = useState(false);
+  const [driverModalSource, setDriverModalSource] = useState<'app' | 'wizard'>('app');
   const [editingDriver, setEditingDriver] = useState<DriverPreset | null>(null);
   const [modalTemplateDriver, setModalTemplateDriver] = useState<DriverPreset>(DRIVER_PRESETS[0]);
+  const [wizardDriverOverride, setWizardDriverOverride] = useState<{
+    driverId: string;
+    coilWiring?: CoilWiringMode;
+    seq: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!mobileParamsOpen) return;
@@ -198,6 +260,22 @@ export default function App() {
       // Ignore storage quota errors
     }
   }, [customDrivers]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(customTemplates));
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [customTemplates]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVE_TEMPLATE_KEY, activeTemplateId);
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [activeTemplateId]);
 
   const acoustics = useMemo(
     () => calculateAcoustics(params, lang, unitSystem),
@@ -236,13 +314,17 @@ export default function App() {
   };
 
   const handleApplyTemplate = (templateId: string) => {
-    const tpl = BOX_TEMPLATE_PRESETS.find((t) => t.id === templateId);
+    const tpl = [...customTemplates, ...BOX_TEMPLATE_PRESETS].find((t) => t.id === templateId);
     if (!tpl) return;
-    setParams({
-      ...DEFAULT_BOX_PARAMS,
-      ...tpl.params,
-      doubleFrontBaffle: false,
-    });
+    setActiveTemplateId(tpl.id);
+    setParams(migrateBoxParams(tpl.params, customDrivers));
+  };
+
+  const handleDeleteCustomTemplate = (templateId: string) => {
+    setCustomTemplates((prev) => prev.filter((t) => t.id !== templateId));
+    if (activeTemplateId === templateId) {
+      setActiveTemplateId('__custom__');
+    }
   };
 
   const handleSaveCustomDriver = (
@@ -282,10 +364,16 @@ export default function App() {
         : [...customDrivers, normalized];
       setCustomDrivers(nextDrivers);
     }
+    setActiveTemplateId('__custom__');
     setParams(migrateBoxParams(importedParams, nextDrivers));
   };
 
-  const openDriverModal = (editTarget: DriverPreset | null, template?: DriverPreset) => {
+  const openDriverModal = (
+    editTarget: DriverPreset | null,
+    template?: DriverPreset,
+    source: 'app' | 'wizard' = 'app',
+  ) => {
+    setDriverModalSource(source);
     setEditingDriver(editTarget);
     setModalTemplateDriver(template ?? activeDriverPreset);
     setDriverModalOpen(true);
@@ -311,7 +399,7 @@ export default function App() {
     <div className="min-h-screen lg:h-screen flex flex-col bg-[#0A0B0E] text-[#F4F4F5] overflow-x-clip lg:overflow-hidden">
       {/* Top Bar: single row on lg+, two compact sticky rows on mobile/tablet */}
       <header className="sticky top-0 z-30 lg:static shrink-0 bg-[#111318] border-b border-white/[0.08]">
-        <div className="h-13 lg:h-14 px-2.5 sm:px-6 flex items-center justify-between gap-1.5 sm:gap-6">
+        <div className="h-12 sm:h-14 px-2 sm:px-6 flex items-center justify-between gap-1 sm:gap-5">
           <a
             href="#top"
             onClick={(e) => {
@@ -324,7 +412,7 @@ export default function App() {
             <img
               src="./assets/sublab3d-logo-wide.png"
               alt="SubLab 3D — Precision Bass Management"
-              className="h-5 sm:h-9 lg:h-10 w-auto object-contain select-none"
+              className="h-4 sm:h-9 lg:h-10 w-auto object-contain select-none"
             />
           </a>
 
@@ -362,7 +450,7 @@ export default function App() {
                 onClick={() => setUnitSystem('metric')}
                 aria-pressed={unitSystem === 'metric'}
                 title={isEn ? 'Metric units (mm, L, cm²)' : 'Jednostki metryczne (mm, L, cm²)'}
-                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
+                className={`px-1 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
                   unitSystem === 'metric'
                     ? 'bg-red-600 text-white'
                     : 'text-zinc-400 hover:text-white'
@@ -377,7 +465,7 @@ export default function App() {
                 onClick={() => setUnitSystem('imperial')}
                 aria-pressed={unitSystem === 'imperial'}
                 title={isEn ? 'Imperial units (in, ft³, in²)' : 'Jednostki imperialne (in, ft³, in²)'}
-                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
+                className={`px-1 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
                   unitSystem === 'imperial'
                     ? 'bg-red-600 text-white'
                     : 'text-zinc-400 hover:text-white'
@@ -399,7 +487,7 @@ export default function App() {
                 data-testid="lang-btn-pl"
                 onClick={() => setLang('pl')}
                 aria-pressed={lang === 'pl'}
-                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
+                className={`px-1 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
                   lang === 'pl'
                     ? 'bg-red-600 text-white'
                     : 'text-zinc-400 hover:text-white'
@@ -412,7 +500,7 @@ export default function App() {
                 data-testid="lang-btn-en"
                 onClick={() => setLang('en')}
                 aria-pressed={lang === 'en'}
-                className={`px-1.5 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
+                className={`px-1 sm:px-2 py-1 text-[10px] sm:text-[11px] font-semibold rounded transition-colors ${
                   lang === 'en'
                     ? 'bg-red-600 text-white'
                     : 'text-zinc-400 hover:text-white'
@@ -424,22 +512,38 @@ export default function App() {
 
             <button
               type="button"
-              data-testid="mobile-params-toggle"
-              onClick={() => setMobileParamsOpen(true)}
-              aria-expanded={mobileParamsOpen}
-              className="lg:hidden inline-flex items-center gap-1 px-2 py-1.5 text-[11px] sm:text-xs font-medium text-zinc-100 bg-[#161920] border border-white/[0.14] rounded-md hover:bg-white/[0.08] transition-colors whitespace-nowrap shrink-0"
+              data-testid="new-project-btn"
+              onClick={() => {
+                setMobileParamsOpen(false);
+                setWizardOpen(true);
+              }}
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-3 py-1 sm:py-2 text-[10px] sm:text-xs font-semibold text-white bg-[#161920] border border-white/[0.16] rounded-md hover:border-red-500/60 hover:bg-white/[0.08] transition-colors whitespace-nowrap shrink-0"
             >
-              <Sliders className="w-3.5 h-3.5 text-red-400" />
-              <span>{isEn ? 'Params' : 'Parametry'}</span>
+              <FolderPlus className="w-3.5 h-3.5 text-red-400" />
+              <span className="sm:hidden">{isEn ? 'New' : 'Nowy'}</span>
+              <span className="hidden sm:inline">{isEn ? 'New Project' : 'Nowy projekt'}</span>
             </button>
 
             <button
               type="button"
+              data-testid="mobile-params-toggle"
+              onClick={() => setMobileParamsOpen(true)}
+              aria-expanded={mobileParamsOpen}
+              className="lg:hidden inline-flex items-center gap-1 px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium text-zinc-100 bg-[#161920] border border-white/[0.14] rounded-md hover:bg-white/[0.08] transition-colors whitespace-nowrap shrink-0"
+            >
+              <Sliders className="w-3.5 h-3.5 text-red-400" />
+              <span className="sm:hidden">{isEn ? 'Edit' : 'Opcje'}</span>
+              <span className="hidden sm:inline">{isEn ? 'Params' : 'Parametry'}</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="share-model-btn"
+              aria-label={isEn ? 'Share model' : 'Udostępnij model'}
               onClick={() => setShareModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-2 sm:px-4 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-2 sm:px-4 py-1 sm:py-2 text-[10px] sm:text-xs font-semibold text-white bg-red-600 rounded-md hover:bg-red-500 transition-colors whitespace-nowrap shrink-0"
             >
               <Share2 className="w-3.5 h-3.5" />
-              <span className="sm:hidden">{isEn ? 'Share' : 'Udostępnij'}</span>
               <span className="hidden sm:inline">{isEn ? 'Share model' : 'Udostępnij model'}</span>
             </button>
           </div>
@@ -492,8 +596,11 @@ export default function App() {
             params={params}
             acoustics={acoustics}
             customDrivers={customDrivers}
+            customTemplates={customTemplates}
+            activeTemplateId={activeTemplateId}
             onChange={handlePatch}
             onApplyTemplate={handleApplyTemplate}
+            onDeleteCustomTemplate={handleDeleteCustomTemplate}
             onSaveCustomDriver={handleSaveCustomDriver}
             onDeleteCustomDriver={handleDeleteCustomDriver}
             onOpenDriverModal={openDriverModal}
@@ -538,14 +645,43 @@ export default function App() {
         onImportModel={handleImportModel}
       />
 
+      <NewProjectWizardModal
+        open={wizardOpen}
+        allDrivers={allDrivers}
+        selectedDriverOverride={wizardDriverOverride}
+        onClose={() => setWizardOpen(false)}
+        onOpenAddCustomDriver={(tpl) => openDriverModal(null, tpl, 'wizard')}
+        onCreateProject={(newParams, templatePreset) => {
+          setCustomTemplates((prev) => [
+            templatePreset,
+            ...prev.filter((t) => t.id !== templatePreset.id),
+          ]);
+          setActiveTemplateId(templatePreset.id);
+          setParams({
+            ...newParams,
+            doubleFrontBaffle: false,
+          });
+          setActiveView('3d');
+        }}
+      />
+
       <DriverTsModal
         open={driverModalOpen}
         editingDriver={editingDriver}
         initialTemplateDriver={modalTemplateDriver}
         onClose={() => setDriverModalOpen(false)}
-        onSaveDriver={(driver, applyToProjectToo, coilWiring) =>
-          handleSaveCustomDriver(driver, applyToProjectToo, coilWiring)
-        }
+        onSaveDriver={(driver, applyToProjectToo, coilWiring) => {
+          if (driverModalSource === 'wizard') {
+            handleSaveCustomDriver(driver, false, coilWiring);
+            setWizardDriverOverride({
+              driverId: driver.id,
+              coilWiring,
+              seq: Date.now(),
+            });
+          } else {
+            handleSaveCustomDriver(driver, applyToProjectToo, coilWiring);
+          }
+        }}
       />
     </div>
   );

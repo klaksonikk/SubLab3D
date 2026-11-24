@@ -29,6 +29,7 @@
   - `6th-Order Bandpass` (dual independently tuned chambers and dual ports).
 - **Coupled geometry solver**: automatically solves `Width (W)`, `Height (H)`, `Depth (D)`, or `Net Volume (Vnet)` while holding target `Vnet`, tuning `Fb`, and port area `S`.
 - **Multi-driver layouts (1–6 drivers)**: automatic grid and staggered (*Quincunx*) placement with magnet depth clearance and baffle margin checks.
+- **New Project Wizard**: 3-step guided setup for selecting subwoofer application (`Car Audio Daily`, `Car Audio SPL`, `Home Theater`, `Studio / Hi-Fi SQ`, `PA / Live`), choosing or adding a custom speaker (via datasheet T-S solver or `.wdr` import), and previewing acoustic dimensions before generating the enclosure.
 - **Interactive CAD viewport**: `X-Ray`, `Solid`, and `Wireframe` modes, `Exploded View`, CAD measurement grid, procedural materials (`Birch Plywood`, `MDF`, `Black Laminate`), optional `2×` double front baffle, and a slide-over **mobile controls drawer** on narrow phone screens.
 
 ### 2. Cut-List & Sheet Nesting (`Cut-List` & `Sheet Nesting`)
@@ -77,17 +78,18 @@ Sample slot-ported enclosure (`680 × 380 mm`, `18 mm` birch plywood, `55.0 L` n
 
 ## Unit Tests & Verification
 
-The acoustic solver, T-S solver, WinISD `.wdr` parser, unit conversions, cut-list/sheet-nesting engine, and WSD simulator are verified by **41 unit tests** (`node:test` via `tsx`):
+The acoustic solver, project wizard synthesis, T-S solver, WinISD `.wdr` parser, unit conversions, cut-list/sheet-nesting engine, and WSD simulator are verified by **45 unit tests** (`node:test` via `tsx`):
 
 ```bash
-# Run all acoustic, T-S solver, .wdr parser, unit conversion, and WSD simulator unit tests
+# Run all acoustic, wizard, T-S solver, .wdr parser, unit conversion, and WSD simulator unit tests
 npx --yes tsx --test \
   src/engine/acoustics.test.ts \
   src/engine/simulator.test.ts \
   src/engine/tsSolver.test.ts \
   src/engine/winisdWdr.test.ts \
   src/engine/referenceComparison.test.ts \
-  src/engine/units.test.ts
+  src/engine/units.test.ts \
+  src/engine/projectWizard.test.ts
 
 # TypeScript type-checking
 npm run lint
@@ -108,6 +110,7 @@ npm run build
     │   ├── simulator.ts             # WSD simulator (17 curves, DSP filters, alignments)
     │   ├── tsSolver.ts              # Thiele-Small solver (Q triad, Mms/Cms, Bl, SPL, preset builder)
     │   ├── winisdWdr.ts             # WinISD .wdr INI parser & SI/practical unit auto-detection
+    │   ├── projectWizard.ts         # Guided application-tuned enclosure synthesis engine
     │   ├── units.ts                 # Bidirectional metric <-> imperial converters & display formatters
     │   ├── cutlist.ts               # Panel cut-list generator & 2D sheet nesting optimizer
     │   ├── sceneBuilder.ts          # Three.js parametric 3D geometry generator
@@ -115,9 +118,10 @@ npm run build
     │   ├── presets.ts               # Built-in driver preset & enclosure templates
     │   ├── sharing.ts               # URL model token serialization/deserialization
     │   ├── types.ts                 # CAD & Thiele-Small TypeScript domain types
-    │   └── *.test.ts                # 41 unit tests (physics, solver, WSD, .wdr, units, i18n)
+    │   └── *.test.ts                # 45 unit tests (physics, wizard, solver, WSD, .wdr, units, i18n)
     └── components/
         ├── AcousticWorkbench.tsx    # WSD laboratory & multi-variant comparison workbench
+        ├── NewProjectWizardModal.tsx # 3-step New Project Wizard (use case, custom driver, preview)
         ├── DriverTsModal.tsx        # Custom T-S driver & .wdr import modal
         ├── Viewport3D.tsx           # Three.js CAD viewport, cameras, X-Ray/Wireframe/Exploded modes
         ├── SidebarControls.tsx      # Enclosure, port & driver parameter controls (responsive drawer)
